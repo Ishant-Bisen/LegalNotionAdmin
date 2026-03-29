@@ -1,0 +1,248 @@
+@import "tailwindcss";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f3f6f4;
+}
+
+/* ─── Quill editor ─── */
+.ql-editor {
+  min-height: 450px;
+  font-size: 16px;
+  line-height: 1.75;
+  font-family: 'Inter', sans-serif;
+  color: #334155;
+}
+
+.ql-editor.ql-blank::before {
+  color: #cbd5e1;
+  font-style: normal;
+}
+
+.ql-toolbar.ql-snow {
+  border-radius: 8px 8px 0 0;
+  border-color: #e0e0e0;
+  background: #fafafa;
+}
+
+.ql-container.ql-snow {
+  border-radius: 0 0 8px 8px;
+  border-color: #e0e0e0;
+}
+
+/* ─── Post content ─── */
+.post-content img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.post-content h1,
+.post-content h2,
+.post-content h3 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+.post-content p {
+  margin-bottom: 12px;
+}
+
+.post-content ul,
+.post-content ol {
+  padding-left: 24px;
+  margin-bottom: 12px;
+}
+
+/* Reader preview (public-style article view in admin) */
+.reader-preview-article .post-content {
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  color: #334155;
+}
+
+.reader-preview-article .post-content p {
+  margin-bottom: 1.25rem;
+}
+
+.reader-preview-article .post-content h1 {
+  font-size: 1.75rem;
+  margin-top: 1.75rem;
+}
+
+.reader-preview-article .post-content h2 {
+  font-size: 1.35rem;
+  margin-top: 1.5rem;
+}
+
+.reader-preview-article .post-content h3 {
+  font-size: 1.15rem;
+  margin-top: 1.25rem;
+}
+
+/* ─── Staggered entrance animations ─── */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeSlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes draw-line {
+  from {
+    stroke-dashoffset: 200;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-fade-up {
+  animation: fadeSlideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 0;
+}
+
+.animate-fade-right {
+  animation: fadeSlideRight 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 0;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 0;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float 4s ease-in-out 1s infinite;
+}
+
+.animate-float-slow {
+  animation: float 6s ease-in-out 0.5s infinite;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 3s ease-in-out infinite;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 6s ease infinite;
+}
+
+.delay-75  { animation-delay: 75ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-700 { animation-delay: 700ms; }
+
+/* ─── Sidebar card hover lift ─── */
+.sidebar-card {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.25s ease;
+}
+.sidebar-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 36px rgba(67, 160, 71, 0.12);
+  border-color: rgba(129, 199, 132, 0.65);
+}
+
+/* ─── Tag chip pop-in ─── */
+@keyframes chip-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chip-enter {
+  animation: chip-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
