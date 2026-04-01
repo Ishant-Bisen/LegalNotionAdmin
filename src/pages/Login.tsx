@@ -22,7 +22,7 @@ type LocationState = {
 };
 
 export default function Login() {
-  const { login, user } = useAuth();
+  const { login, user, loginError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as LocationState | null)?.from?.pathname ?? '/';
@@ -30,35 +30,44 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
 
   useEffect(() => {
     if (user) navigate(from, { replace: true });
   }, [user, from, navigate]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     setError('');
     if (!email.trim() || !password) {
       setError('Enter your email and password.');
+      setSubmitting(false);
       return;
     }
-    if (!login(email, password)) {
-      setError('Invalid email or password.');
+    const ok = await login(email, password);
+    if (!ok) {
+      setError(loginError ?? 'Login failed.');
+      setSubmitting(false);
       return;
     }
+    setSubmitting(false);
     navigate(from, { replace: true });
   }
 
   return (
     <Box
       sx={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         px: 2,
         py: 3,
+        pt: 'max(24px, env(safe-area-inset-top))',
+        pb: 'max(24px, env(safe-area-inset-bottom))',
         background: gradients.pageBackdrop,
       }}
     >
@@ -172,16 +181,20 @@ export default function Login() {
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             />
 
-            <Button type="submit" variant="contained" size="large" fullWidth sx={{ py: 1.35, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}>
-              Sign in
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              fullWidth
+              disabled={submitting}
+              sx={{ py: 1.35, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
+            >
+              {submitting ? 'Signing in…' : 'Sign in'}
             </Button>
 
             {import.meta.env.DEV ? (
               <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>
-                Dev default: <strong>admin@legalnotion.local</strong> / <strong>admin123</strong>
-                <br />
-                Set <code style={{ fontSize: 11 }}>VITE_ADMIN_EMAIL</code> and{' '}
-                <code style={{ fontSize: 11 }}>VITE_ADMIN_PASSWORD</code> in <code style={{ fontSize: 11 }}>.env</code>.
+                Use the admin email and password configured for this deployment.
               </Typography>
             ) : (
               <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', display: 'block' }}>

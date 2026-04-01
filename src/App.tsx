@@ -2,11 +2,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { appTheme } from './theme/appTheme';
-import { PostProvider } from './context/PostContext';
-import { ReviewProvider } from './context/ReviewContext';
-import { CareerProvider } from './context/CareerContext';
 import { AuthProvider } from './context/AuthContext';
 import Layout from './components/Layout';
+import { AdminDataProviders } from './components/AdminDataProviders';
 import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import PostEditor from './pages/PostEditor';
@@ -20,27 +18,27 @@ export default function App() {
     <ThemeProvider theme={appTheme}>
       <CssBaseline />
       <AuthProvider>
-        <PostProvider>
-          <ReviewProvider>
-            <CareerProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<Layout />}>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/editor" element={<PostEditor />} />
-                    <Route path="/editor/:id" element={<PostEditor />} />
-                    <Route path="/posts" element={<AllPosts />} />
-                    <Route path="/reviews" element={<Reviews />} />
-                    <Route path="/careers" element={<Careers />} />
-                  </Route>
-                </Route>
-              </Routes>
-            </BrowserRouter>
-            </CareerProvider>
-          </ReviewProvider>
-        </PostProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route element={<ProtectedRoute />}>
+              <Route
+                element={
+                  <AdminDataProviders>
+                    <Layout />
+                  </AdminDataProviders>
+                }
+              >
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/editor" element={<PostEditor />} />
+                <Route path="/editor/:id" element={<PostEditor />} />
+                <Route path="/posts" element={<AllPosts />} />
+                <Route path="/reviews" element={<Reviews />} />
+                <Route path="/careers" element={<Careers />} />
+              </Route>
+            </Route>
+          </Routes>
+        </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
   );

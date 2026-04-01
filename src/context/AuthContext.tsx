@@ -1,59 +1,81 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-
-const STORAGE_KEY = 'legalnotion_admin_auth';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { getMe, loginAdmin, logoutAdmin, type AuthLoginBody } from '../api/authApi';
 
 export type AuthUser = {
+  id: string;
   email: string;
 };
 
 type AuthContextValue = {
   user: AuthUser | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  loginError: string | null;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function readStoredUser(): AuthUser | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === 'object' && 'email' in parsed && typeof (parsed as AuthUser).email === 'string') {
-      return { email: (parsed as AuthUser).email };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function expectedCredentials() {
-  const email = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.trim() || 'admin@legalnotion.local';
-  const password = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) || 'admin123';
-  return { email, password };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const login = useCallback((email: string, password: string) => {
-    const { email: expectedEmail, password: expectedPassword } = expectedCredentials();
-    const ok =
-      email.trim().toLowerCase() === expectedEmail.toLowerCase() && password === expectedPassword;
-    if (!ok) return false;
-    const next: AuthUser = { email: email.trim() };
-    setUser(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    return true;
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      let admin = await getMe();
+      if (admin === undefined) {
+        await new Promise((r) => setTimeout(r, 250));
+        admin = await getMe();
+      }
+      if (admin === undefined) {
+        /* Still unknown — avoid logging out a valid cookie/token session on flaky networks. */
+      } else if (admin) {
+        setUser({ id: admin.id, email: admin.email });
+      } else {
+        setUser(null);
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const logout = useCallback(() => {
-    setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      setLoginError(null);
+      try {
+        const body: AuthLoginBody = { email, password };
+        const res = await loginAdmin(body);
+        setUser({ id: res.admin.id, email: res.admin.email });
+        return true;
+      } catch (e) {
+        let msg = e instanceof Error ? e.message : 'Login failed';
+        if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          msg =
+            'Cannot reach the API. In dev, remove VITE_API_BASE so /api is proxied to the backend; or set FRONTEND_ORIGIN if calling the API directly.';
+        }
+        setLoginError(msg);
+        setUser(null);
+        return false;
+      }
+    },
+    [],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await logoutAdmin();
+    } finally {
+      setUser(null);
+    }
   }, []);
 
-  const value = useMemo(() => ({ user, login, logout }), [user, login, logout]);
+  const value = useMemo(() => ({ user, loading, login, logout, loginError }), [user, loading, login, logout, loginError]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

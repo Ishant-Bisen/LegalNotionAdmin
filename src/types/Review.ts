@@ -1,24 +1,56 @@
 /**
- * Admin-only moderation shape. Full fields (name, role, service, review) stay in this panel;
- * your public site should only expose what you approve (often a subset).
+ * Matches LegalNotion backend review `state` enum.
  */
-export type ReviewStatus = 'pending' | 'approved' | 'discarded';
+export type ReviewState = 'needs_action' | 'approved' | 'discarded';
 
+/** Raw document from GET/POST/PATCH /api/reviews */
+export interface ApiReviewDocument {
+  _id: string;
+  name: string;
+  role: string;
+  serviceUsed: string;
+  date?: string;
+  ratings: number;
+  state: ReviewState;
+  content: string;
+  reply?: { body: string; repliedAt?: string; updatedAt?: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Normalized shape for the admin UI (stable field names used across components).
+ */
 export interface Review {
   id: string;
   name: string;
   rating: number;
-  /** e.g. General Counsel, Founder, Individual client */
   role: string;
-  /** Service or engagement the client is reviewing */
   serviceUsed: string;
-  /** Full review text */
+  /** Client review text (API: `content`). */
   review: string;
-  /** Draft reply for your team; send via email or your workflow — stored here for reference */
+  /** Team reply (API: `reply.body`). */
   adminReply?: string;
-  status: ReviewStatus;
+  status: ReviewState;
   createdAt: string;
   updatedAt: string;
-  /** Optional internal contact — not shown on the public testimonial wall */
+  /** API `date` when present (display / sort fallback). */
+  date?: string;
   authorEmail?: string;
+}
+
+export function mapApiReviewToReview(doc: ApiReviewDocument): Review {
+  return {
+    id: doc._id,
+    name: doc.name,
+    rating: typeof doc.ratings === 'number' ? doc.ratings : 5,
+    role: doc.role ?? '',
+    serviceUsed: doc.serviceUsed ?? '',
+    review: doc.content ?? '',
+    adminReply: doc.reply?.body?.trim() ? doc.reply.body : undefined,
+    status: doc.state,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    date: doc.date,
+  };
 }

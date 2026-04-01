@@ -1,23 +1,19 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react';
 import type { Post } from '../types/Post';
+import { mapApiBlogToPost } from '../types/Post';
 import { sortPostsByRecent } from '../utils/sortPosts';
+import { fetchBlogsList, fetchBlog, createBlog, patchBlog, deleteBlog } from '../api/blogsApi';
 
-interface PostContextType {
-  posts: Post[];
-  addPost: (post: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>) => Post;
-  updatePost: (id: string, data: Partial<Omit<Post, 'id' | 'createdAt'>>) => void;
-  deletePost: (id: string) => void;
-  getPost: (id: string) => Post | undefined;
-  availableTags: string[];
-  addTag: (tag: string) => void;
-  removeTag: (tag: string) => void;
-}
-
-const PostContext = createContext<PostContextType | null>(null);
-
-const STORAGE_KEY = 'legalnotion_posts';
-const TAGS_STORAGE_KEY = 'legalnotion_tags';
+const TAGS_EXTRA_KEY = 'legalnotion_blog_tag_suggestions';
 
 const DEFAULT_TAGS = [
   'Contract Law',
@@ -37,268 +33,186 @@ const DEFAULT_TAGS = [
   'Cyber Law',
 ];
 
-function loadTags(): string[] {
+function loadExtraTags(): string[] {
   try {
-    const raw = localStorage.getItem(TAGS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_TAGS;
+    const raw = localStorage.getItem(TAGS_EXTRA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
   } catch {
-    return DEFAULT_TAGS;
+    return [];
   }
 }
 
-function persistTags(tags: string[]) {
-  localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(tags));
+function persistExtraTags(tags: string[]) {
+  localStorage.setItem(TAGS_EXTRA_KEY, JSON.stringify(tags));
 }
 
-function loadPosts(): Post[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return samplePosts();
-    const parsed = JSON.parse(raw) as Post[];
-    const now = new Date().toISOString();
-    return parsed.map((p) => {
-      const createdAt = typeof p.createdAt === 'string' ? p.createdAt : now;
-      const updatedAt = typeof p.updatedAt === 'string' ? p.updatedAt : createdAt;
-      return {
-        ...p,
-        summary: typeof p.summary === 'string' ? p.summary : '',
-        createdAt,
-        updatedAt,
-      };
-    });
-  } catch {
-    return samplePosts();
-  }
+function uniqueSorted(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
-function savePosts(posts: Post[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+interface PostContextType {
+  posts: Post[];
+  loading: boolean;
+  error: string | null;
+  refreshPosts: (opts?: { silent?: boolean }) => Promise<void>;
+  addPost: (post: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Post>;
+  updatePost: (id: string, data: Partial<Omit<Post, 'id' | 'createdAt'>>) => Promise<void>;
+  deletePost: (id: string) => Promise<void>;
+  getPost: (id: string) => Post | undefined;
+  /** Load one blog by id (GET /api/blogs/:id) and merge into local list */
+  fetchPostById: (id: string) => Promise<Post | null>;
+  availableTags: string[];
+  addTag: (tag: string) => void;
+  removeTag: (tag: string) => void;
 }
 
-function daysAgoIso(days: number): string {
-  return new Date(Date.now() - days * 86400000).toISOString();
-}
-
-function samplePosts(): Post[] {
-  const now = new Date().toISOString();
-  const seeds: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>[] = [
-    {
-      title: 'Understanding Contract Law Basics',
-      summary:
-        'A quick guide to what makes a contract valid, why it matters in everyday life, and the core ideas every reader should know before signing.',
-      content:
-        '<p>Contract law governs legally binding agreements between parties. A valid contract typically requires an offer, acceptance, consideration, and mutual assent.</p>',
-      labels: ['Contract Law', 'Legal Basics'],
-      coverImage: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&q=80',
-      timeToRead: 5,
-      status: 'published',
-    },
-    {
-      title: 'Intellectual Property Rights in the Digital Age',
-      summary:
-        'How IP works online, what creators should watch for, and practical ways to protect software, content, and brands in 2026.',
-      content:
-        '<p>Digital transformation has fundamentally changed how intellectual property is created, shared, and protected.</p>',
-      labels: ['IP Law', 'Technology'],
-      coverImage: 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=800&q=80',
-      timeToRead: 8,
-      status: 'published',
-    },
-    {
-      title: 'Draft: Employment Law Updates 2026',
-      summary: 'Outline of expected changes to employment rules, remote work, and worker protections for the year ahead.',
-      content: '<p>This draft covers the latest employment law changes expected in 2026.</p>',
-      labels: ['Employment Law', 'Updates'],
-      coverImage: '',
-      timeToRead: 6,
-      status: 'draft',
-    },
-    {
-      title: 'Data Privacy Checklist for Small Teams',
-      summary: 'A practical checklist for policies, vendors, and breach response without drowning in jargon.',
-      content: '<p>Privacy programs start with inventory, contracts, and training. This checklist walks through the essentials.</p>',
-      labels: ['Cyber Law', 'Technology'],
-      coverImage: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=800&q=80',
-      timeToRead: 7,
-      status: 'published',
-    },
-    {
-      title: 'When Do You Need a Trademark Search?',
-      summary: 'Before you launch a name or logo, here is how searches reduce conflict risk and save rework later.',
-      content: '<p>Clearance searches compare your mark to existing filings and common-law use.</p>',
-      labels: ['IP Law', 'Corporate Law'],
-      coverImage: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&q=80',
-      timeToRead: 6,
-      status: 'published',
-    },
-    {
-      title: 'Draft: Family Law Mediation Explained',
-      summary: 'How mediation differs from litigation and what to expect in the first session.',
-      content: '<p>Mediation is confidential and party-driven; the mediator does not decide the outcome.</p>',
-      labels: ['Family Law', 'Legal Basics'],
-      coverImage: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?w=800&q=80',
-      timeToRead: 5,
-      status: 'draft',
-    },
-    {
-      title: 'Commercial Lease Clauses Worth Negotiating',
-      summary: 'Rent steps, TI allowances, and exit rights — the clauses that most often matter for tenants.',
-      content: '<p>Leases are long-term obligations; a few negotiated terms can change outcomes materially.</p>',
-      labels: ['Real Estate', 'Contract Law'],
-      coverImage: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80',
-      timeToRead: 9,
-      status: 'published',
-    },
-    {
-      title: 'Immigration Options for Skilled Workers',
-      summary: 'A high-level map of common visa categories and timing considerations for employers.',
-      content: '<p>Employer-sponsored pathways vary by role, wage, and country-specific rules.</p>',
-      labels: ['Immigration', 'Employment Law'],
-      coverImage: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&q=80',
-      timeToRead: 10,
-      status: 'published',
-    },
-    {
-      title: 'Tax Residency and Remote Work Abroad',
-      summary: 'Why “working from anywhere” can trigger filing obligations in more than one place.',
-      content: '<p>Residency rules differ by jurisdiction; days-in-country tests are only one piece.</p>',
-      labels: ['Tax Law', 'Updates'],
-      coverImage: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80',
-      timeToRead: 7,
-      status: 'published',
-    },
-    {
-      title: 'Draft: Criminal Defense — First 48 Hours',
-      summary: 'What families should know about counsel, bail, and preserving evidence early on.',
-      content: '<p>Early decisions affect options downstream; prompt counsel can help navigate intake.</p>',
-      labels: ['Criminal Law', 'Legal Basics'],
-      coverImage: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&q=80',
-      timeToRead: 6,
-      status: 'draft',
-    },
-    {
-      title: 'Human Rights Reporting for NGOs',
-      summary: 'Documenting incidents responsibly and aligning field notes with later legal strategy.',
-      content: '<p>Consistent, dated records support advocacy and any parallel legal processes.</p>',
-      labels: ['Human Rights', 'Updates'],
-      coverImage: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&q=80',
-      timeToRead: 8,
-      status: 'published',
-    },
-    {
-      title: 'Constitutional Law: Separation of Powers Primer',
-      summary: 'A readable overview of checks and balances for readers following high-court news.',
-      content: '<p>Legislative, executive, and judicial functions interact through veto, appointment, and review.</p>',
-      labels: ['Constitutional Law', 'Legal Basics'],
-      coverImage: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&q=80',
-      timeToRead: 12,
-      status: 'published',
-    },
-    {
-      title: 'M&A Due Diligence: Red Flags in Contracts',
-      summary: 'What buyers’ counsel often scans first in customer and vendor agreements.',
-      content: '<p>Change-of-control, assignment, and liability caps frequently appear in early issue lists.</p>',
-      labels: ['Corporate Law', 'Contract Law'],
-      coverImage: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80',
-      timeToRead: 11,
-      status: 'published',
-    },
-    {
-      title: 'Draft: Cyber Incident Playbook Outline',
-      summary: 'Roles, timelines, and regulator touchpoints for a tabletop-friendly outline.',
-      content: '<p>Tabletops test notification chains and evidence preservation before a real event.</p>',
-      labels: ['Cyber Law', 'Updates'],
-      coverImage: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&q=80',
-      timeToRead: 5,
-      status: 'draft',
-    },
-    {
-      title: 'Estate Planning Documents Everyone Should Know',
-      summary: 'Wills, trusts, powers of attorney — what each does and how they fit together.',
-      content: '<p>Core documents address probate avoidance, healthcare decisions, and asset transfer.</p>',
-      labels: ['Family Law', 'Legal Basics'],
-      coverImage: 'https://images.unsplash.com/photo-1519710164239-da123dc03ef4?w=800&q=80',
-      timeToRead: 6,
-      status: 'published',
-    },
-  ];
-
-  return seeds.map((p, i) => {
-    const created = i === 0 ? now : daysAgoIso(i * 3);
-    return {
-      ...p,
-      id: uuidv4(),
-      createdAt: created,
-      updatedAt: created,
-    };
-  });
-}
+const PostContext = createContext<PostContextType | null>(null);
 
 export function PostProvider({ children }: { children: ReactNode }) {
-  const [posts, setPosts] = useState<Post[]>(loadPosts);
-  const [availableTags, setAvailableTags] = useState<string[]>(loadTags);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [extraTags, setExtraTags] = useState<string[]>(() => loadExtraTags());
+  /** Drop stale list responses when a newer refetch or mutation-driven refresh started later. */
+  const listFetchGen = useRef(0);
 
-  const persist = useCallback((updated: Post[]) => {
-    setPosts(updated);
-    savePosts(updated);
+  const refreshPosts = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    const gen = ++listFetchGen.current;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const docs = await fetchBlogsList();
+      if (gen !== listFetchGen.current) return;
+      setPosts(docs.map(mapApiBlogToPost));
+      setError(null);
+    } catch (e) {
+      if (gen !== listFetchGen.current) return;
+      setError(e instanceof Error ? e.message : 'Failed to load blogs');
+      setPosts([]);
+    } finally {
+      if (gen === listFetchGen.current && !silent) setLoading(false);
+    }
   }, []);
 
-  const addTag = useCallback(
-    (tag: string) => {
-      const trimmed = tag.trim();
-      if (trimmed && !availableTags.includes(trimmed)) {
-        const updated = [...availableTags, trimmed];
-        setAvailableTags(updated);
-        persistTags(updated);
+  useEffect(() => {
+    void refreshPosts();
+  }, [refreshPosts]);
+
+  const mergePostIntoList = useCallback((post: Post) => {
+    setPosts((prev) => {
+      const idx = prev.findIndex((p) => p.id === post.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = post;
+        return sortPostsByRecent(next);
+      }
+      return sortPostsByRecent([post, ...prev]);
+    });
+  }, []);
+
+  const fetchPostById = useCallback(
+    async (id: string) => {
+      try {
+        const doc = await fetchBlog(id);
+        const post = mapApiBlogToPost(doc);
+        mergePostIntoList(post);
+        return post;
+      } catch {
+        return null;
       }
     },
-    [availableTags],
-  );
-
-  const removeTag = useCallback(
-    (tag: string) => {
-      const updated = availableTags.filter((t) => t !== tag);
-      setAvailableTags(updated);
-      persistTags(updated);
-    },
-    [availableTags],
+    [mergePostIntoList],
   );
 
   const addPost = useCallback(
-    (data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>): Post => {
-      const now = new Date().toISOString();
-      const post: Post = { ...data, id: uuidv4(), createdAt: now, updatedAt: now };
-      persist(sortPostsByRecent([post, ...posts]));
-      return post;
+    async (data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>): Promise<Post> => {
+      const doc = await createBlog({
+        title: data.title.trim(),
+        summary: data.summary,
+        content: data.content,
+        labels: data.labels,
+        coverImage: data.coverImage,
+        timeToRead: data.timeToRead,
+        status: data.status,
+      });
+      await refreshPosts({ silent: true });
+      return mapApiBlogToPost(doc);
     },
-    [posts, persist],
+    [refreshPosts],
   );
 
   const updatePost = useCallback(
-    (id: string, data: Partial<Omit<Post, 'id' | 'createdAt'>>) => {
-      const now = new Date().toISOString();
-      const next = posts.map((p) =>
-        p.id === id ? { ...p, ...data, updatedAt: now } : p,
-      );
-      persist(sortPostsByRecent(next));
+    async (id: string, data: Partial<Omit<Post, 'id' | 'createdAt'>>) => {
+      const body: Record<string, unknown> = {};
+      if (data.title !== undefined) body.title = data.title;
+      if (data.summary !== undefined) body.summary = data.summary;
+      if (data.content !== undefined) body.content = data.content;
+      if (data.labels !== undefined) body.labels = data.labels;
+      if (data.coverImage !== undefined) body.coverImage = data.coverImage;
+      if (data.timeToRead !== undefined) body.timeToRead = data.timeToRead;
+      if (data.status !== undefined) body.status = data.status;
+      await patchBlog(id, body);
+      await refreshPosts({ silent: true });
     },
-    [posts, persist],
+    [refreshPosts],
   );
 
   const deletePost = useCallback(
-    (id: string) => {
-      persist(posts.filter((p) => p.id !== id));
+    async (id: string) => {
+      await deleteBlog(id);
+      await refreshPosts({ silent: true });
     },
-    [posts, persist],
+    [refreshPosts],
   );
 
   const getPost = useCallback((id: string) => posts.find((p) => p.id === id), [posts]);
 
-  return (
-    <PostContext.Provider value={{ posts, addPost, updatePost, deletePost, getPost, availableTags, addTag, removeTag }}>
-      {children}
-    </PostContext.Provider>
+  const availableTags = useMemo(() => {
+    const fromPosts = posts.flatMap((p) => p.labels);
+    return uniqueSorted([...DEFAULT_TAGS, ...extraTags, ...fromPosts]);
+  }, [posts, extraTags]);
+
+  const addTag = useCallback(
+    (tag: string) => {
+      const trimmed = tag.trim();
+      if (!trimmed || availableTags.includes(trimmed)) return;
+      const updated = [...extraTags, trimmed];
+      setExtraTags(updated);
+      persistExtraTags(updated);
+    },
+    [availableTags, extraTags],
   );
+
+  const removeTag = useCallback(
+    (tag: string) => {
+      const updated = extraTags.filter((t) => t !== tag);
+      setExtraTags(updated);
+      persistExtraTags(updated);
+    },
+    [extraTags],
+  );
+
+  const value: PostContextType = {
+    posts,
+    loading,
+    error,
+    refreshPosts,
+    addPost,
+    updatePost,
+    deletePost,
+    getPost,
+    fetchPostById,
+    availableTags,
+    addTag,
+    removeTag,
+  };
+
+  return <PostContext.Provider value={value}>{children}</PostContext.Provider>;
 }
 
 export function usePosts() {

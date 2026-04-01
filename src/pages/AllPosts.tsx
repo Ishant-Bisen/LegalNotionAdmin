@@ -32,6 +32,8 @@ import {
   alpha,
   useTheme,
   useMediaQuery,
+  LinearProgress,
+  Alert,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -55,6 +57,22 @@ const placeholderImage = 'https://images.unsplash.com/photo-1505664194779-8beace
 const STAGGER_MS = 85;
 const POSTS_PAGE_SIZE = 9;
 
+function postCardStatusChip(status: PostStatus): { label: string; bgcolor: string; color?: string } {
+  if (status === 'published') return { label: 'Live', bgcolor: 'success.main' };
+  if (status === 'draft') return { label: 'Draft', bgcolor: 'warning.main' };
+  return { label: 'Archived', bgcolor: 'grey.700' };
+}
+
+function readerPreviewStatusChip(status: PostStatus): { label: string; bgcolor: string; color: string } {
+  if (status === 'published') {
+    return { label: 'Published', bgcolor: alpha('#059669', 0.12), color: 'success.dark' };
+  }
+  if (status === 'draft') {
+    return { label: 'Draft preview', bgcolor: alpha('#d97706', 0.12), color: 'warning.dark' };
+  }
+  return { label: 'Archived', bgcolor: alpha('#64748b', 0.16), color: 'text.secondary' };
+}
+
 function ReaderPreviewDialog({
   post,
   open,
@@ -71,6 +89,7 @@ function ReaderPreviewDialog({
 
   if (!post) return null;
 
+  const previewStatus = readerPreviewStatusChip(post.status);
   const hasBody = post.content.replace(/<[^>]*>/g, '').trim().length > 0;
 
   return (
@@ -231,12 +250,12 @@ function ReaderPreviewDialog({
                   <Typography variant="body2">{post.timeToRead} min read</Typography>
                 </Stack>
                 <Chip
-                  label={post.status === 'published' ? 'Published' : 'Draft preview'}
+                  label={previewStatus.label}
                   size="small"
                   sx={{
                     fontWeight: 700,
-                    bgcolor: post.status === 'published' ? alpha('#059669', 0.12) : alpha('#d97706', 0.12),
-                    color: post.status === 'published' ? 'success.dark' : 'warning.dark',
+                    bgcolor: previewStatus.bgcolor,
+                    color: previewStatus.color,
                   }}
                 />
               </Stack>
@@ -246,6 +265,12 @@ function ReaderPreviewDialog({
               {hasBody ? (
                 <Box
                   className="post-content"
+                  sx={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
+                  }}
                   dangerouslySetInnerHTML={{ __html: post.content }}
                 />
               ) : (
@@ -273,7 +298,7 @@ function ReaderPreviewDialog({
 }
 
 export default function AllPosts() {
-  const { posts, deletePost } = usePosts();
+  const { posts, deletePost, loading, error, refreshPosts } = usePosts();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
@@ -314,6 +339,7 @@ export default function AllPosts() {
 
   const publishedCount = posts.filter((p) => p.status === 'published').length;
   const draftCount = posts.filter((p) => p.status === 'draft').length;
+  const archivedCount = posts.filter((p) => p.status === 'archived').length;
 
   function openMenu(e: React.MouseEvent<HTMLElement>, postId: string) {
     setAnchorEl(e.currentTarget);
@@ -335,8 +361,13 @@ export default function AllPosts() {
     setAnchorEl(null);
   }
 
-  function confirmDelete() {
-    if (activePostId) deletePost(activePostId);
+  async function confirmDelete() {
+    if (!activePostId) return;
+    try {
+      await deletePost(activePostId);
+    } catch {
+      /* ignore — could add toast */
+    }
     setDeleteDialogOpen(false);
     setActivePostId(null);
   }
@@ -355,6 +386,19 @@ export default function AllPosts() {
   return (
     <Container maxWidth="lg" disableGutters sx={{ px: { xs: 0, sm: 0 } }}>
       <Stack spacing={{ xs: 3, md: 4 }}>
+        {loading && <LinearProgress sx={{ borderRadius: 1 }} aria-label="Loading posts" />}
+        {error && (
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" onClick={() => void refreshPosts()}>
+                Retry
+              </Button>
+            }
+          >
+            {error}
+          </Alert>
+        )}
         {/* Hero */}
         <Fade in timeout={450}>
           <Card
@@ -388,7 +432,8 @@ export default function AllPosts() {
                     Search, filter, and open reader preview to see the full article as visitors might. List is sorted by most recently updated (same as
                     Dashboard). {posts.length} total
                     {publishedCount > 0 && ` · ${publishedCount} live`}
-                    {draftCount > 0 && ` · ${draftCount} draft${draftCount !== 1 ? 's' : ''}`}.
+                    {draftCount > 0 && ` · ${draftCount} draft${draftCount !== 1 ? 's' : ''}`}
+                    {archivedCount > 0 && ` · ${archivedCount} archived`}.
                   </Typography>
                 </Stack>
                 <Button
@@ -460,6 +505,7 @@ export default function AllPosts() {
                         { value: 'all' as const, label: 'All' },
                         { value: 'published' as const, label: 'Published' },
                         { value: 'draft' as const, label: 'Drafts' },
+                        { value: 'archived' as const, label: 'Archived' },
                       ] as const
                     ).map(({ value, label }) => (
                       <Button
@@ -540,7 +586,9 @@ export default function AllPosts() {
               gap: { xs: 2.5, md: 3 },
             }}
           >
-            {paginatedPosts.map((post, i) => (
+            {paginatedPosts.map((post, i) => {
+              const cardSt = postCardStatusChip(post.status);
+              return (
               <Grow key={post.id} in timeout={550} style={{ transitionDelay: `${(i % 9) * STAGGER_MS + STAGGER_MS * 2}ms` }}>
                 <Card
                   elevation={0}
@@ -571,7 +619,7 @@ export default function AllPosts() {
                       />
                     </CardActionArea>
                     <Chip
-                      label={post.status === 'published' ? 'Live' : 'Draft'}
+                      label={cardSt.label}
                       size="small"
                       sx={{
                         position: 'absolute',
@@ -580,7 +628,7 @@ export default function AllPosts() {
                         fontWeight: 800,
                         fontSize: 11,
                         color: '#fff',
-                        bgcolor: post.status === 'published' ? 'success.main' : 'warning.main',
+                        bgcolor: cardSt.bgcolor,
                       }}
                     />
                     <Stack direction="row" spacing={0.5} sx={{ position: 'absolute', top: 8, right: 8 }}>
@@ -695,7 +743,8 @@ export default function AllPosts() {
                   </CardContent>
                 </Card>
               </Grow>
-            ))}
+            );
+            })}
           </Box>
         )}
         {filtered.length > POSTS_PAGE_SIZE && (

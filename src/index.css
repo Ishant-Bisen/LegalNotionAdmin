@@ -6,29 +6,44 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: #f3f6f4;
 }
 
 /* ─── Quill editor ─── */
+.ql-toolbar.ql-snow {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px 8px 0 0;
+  border-color: #e0e0e0;
+  background: #fafafa;
+}
+
 .ql-editor {
-  min-height: 450px;
+  min-height: min(50vh, 420px);
   font-size: 16px;
   line-height: 1.75;
   font-family: 'Inter', sans-serif;
   color: #334155;
 }
 
+@media (min-width: 900px) {
+  .ql-editor {
+    min-height: 450px;
+  }
+}
+
 .ql-editor.ql-blank::before {
   color: #cbd5e1;
   font-style: normal;
-}
-
-.ql-toolbar.ql-snow {
-  border-radius: 8px 8px 0 0;
-  border-color: #e0e0e0;
-  background: #fafafa;
 }
 
 .ql-container.ql-snow {
@@ -64,6 +79,33 @@ body {
   font-size: 1.0625rem;
   line-height: 1.8;
   color: #334155;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.reader-preview-article .post-content * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.reader-preview-article .post-content pre,
+.reader-preview-article .post-content code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reader-preview-article .post-content table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+.reader-preview-article .post-content td,
+.reader-preview-article .post-content th {
+  word-break: break-word;
 }
 
 .reader-preview-article .post-content p {

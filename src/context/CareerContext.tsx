@@ -1,155 +1,136 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { Candidate, CandidateStatus } from '../types/Candidate';
+import type { ApiCandidateDocument } from '../types/Candidate';
+import { mapApiCandidateToCandidate } from '../types/Candidate';
+import { fetchCandidatesList, patchCandidate, submitCandidate } from '../api/candidatesApi';
 
 interface CareerContextType {
   candidates: Candidate[];
-  addCandidate: (data: Omit<Candidate, 'id' | 'appliedAt' | 'updatedAt' | 'selectionMailSent'> & { selectionMailSent?: boolean }) => Candidate;
-  updateCandidate: (id: string, data: Partial<Omit<Candidate, 'id' | 'appliedAt'>>) => void;
-  setCandidateStatus: (id: string, status: CandidateStatus) => void;
+  loading: boolean;
+  error: string | null;
+  refreshCandidates: (opts?: { silent?: boolean }) => Promise<void>;
+  submitCandidate: (fd: FormData) => Promise<void>;
+  setCandidateStatus: (id: string, status: CandidateStatus) => Promise<void>;
   setSelectionMailSent: (id: string, sent: boolean) => void;
-  removeCandidate: (id: string) => void;
 }
 
 const CareerContext = createContext<CareerContextType | null>(null);
 
-const STORAGE_KEY = 'legalnotion_candidates';
+const MAIL_SENT_KEY = 'legalnotion_candidate_selection_mail_sent';
 
-const now = () => new Date().toISOString();
-
-function sampleCandidates(): Candidate[] {
-  const t = now();
-  return [
-    {
-      id: uuidv4(),
-      name: 'Aisha Khan',
-      email: 'aisha.example@university.edu',
-      college: 'National Law School',
-      passoutYear: 2025,
-      currentLocation: 'Bangalore',
-      resumeFileName: null,
-      resumeDataUrl: null,
-      status: 'pending',
-      appliedAt: t,
-      updatedAt: t,
-      selectionMailSent: false,
-    },
-    {
-      id: uuidv4(),
-      name: 'Rahul Verma',
-      email: 'rahul.verma@email.com',
-      college: 'Delhi University',
-      passoutYear: 2024,
-      currentLocation: 'Mumbai',
-      resumeFileName: null,
-      resumeDataUrl: null,
-      status: 'waiting',
-      appliedAt: t,
-      updatedAt: t,
-      selectionMailSent: false,
-    },
-  ];
-}
-
-function loadCandidates(): Candidate[] {
+function loadMailSentMap(): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return sampleCandidates();
+    const raw = localStorage.getItem(MAIL_SENT_KEY);
+    if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return sampleCandidates();
-    return parsed.map(normalizeCandidate);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const obj = parsed as Record<string, unknown>;
+    const out: Record<string, boolean> = {};
+    Object.entries(obj).forEach(([k, v]) => {
+      out[k] = Boolean(v);
+    });
+    return out;
   } catch {
-    return sampleCandidates();
+    return {};
   }
 }
 
-function normalizeCandidate(x: Record<string, unknown>): Candidate {
-  const statusRaw = x.status;
-  const status: CandidateStatus =
-    statusRaw === 'accepted' || statusRaw === 'rejected' || statusRaw === 'waiting' || statusRaw === 'pending'
-      ? statusRaw
-      : 'pending';
-
-  return {
-    id: typeof x.id === 'string' ? x.id : uuidv4(),
-    name: typeof x.name === 'string' ? x.name : 'Unknown',
-    email: typeof x.email === 'string' ? x.email : '',
-    college: typeof x.college === 'string' ? x.college : '',
-    passoutYear: typeof x.passoutYear === 'number' ? x.passoutYear : new Date().getFullYear(),
-    currentLocation: typeof x.currentLocation === 'string' ? x.currentLocation : '',
-    resumeFileName: typeof x.resumeFileName === 'string' ? x.resumeFileName : null,
-    resumeDataUrl: typeof x.resumeDataUrl === 'string' ? x.resumeDataUrl : null,
-    status,
-    appliedAt: typeof x.appliedAt === 'string' ? x.appliedAt : now(),
-    updatedAt: typeof x.updatedAt === 'string' ? x.updatedAt : now(),
-    selectionMailSent: Boolean(x.selectionMailSent),
-  };
-}
-
-function saveCandidates(list: Candidate[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+function saveMailSentMap(map: Record<string, boolean>) {
+  localStorage.setItem(MAIL_SENT_KEY, JSON.stringify(map));
 }
 
 export function CareerProvider({ children }: { children: ReactNode }) {
-  const [candidates, setCandidates] = useState<Candidate[]>(() => loadCandidates());
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [mailSentMap, setMailSentMap] = useState<Record<string, boolean>>(() => loadMailSentMap());
+
+  const mailSentMapRef = useRef(mailSentMap);
+  const listFetchGen = useRef(0);
+  useEffect(() => {
+    mailSentMapRef.current = mailSentMap;
+    // Update checkbox values without refetching.
+    setCandidates((prev) => prev.map((c) => ({ ...c, selectionMailSent: mailSentMap[c.id] ?? false })));
+  }, [mailSentMap]);
+
+  const refreshCandidates = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    const gen = ++listFetchGen.current;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const docs = await fetchCandidatesList();
+      if (gen !== listFetchGen.current) return;
+      const mapped: Candidate[] = (docs as ApiCandidateDocument[]).map((doc) => {
+        const selectionMailSent = mailSentMapRef.current[doc._id] ?? false;
+        return mapApiCandidateToCandidate(doc, selectionMailSent);
+      });
+      setCandidates(mapped);
+      setError(null);
+    } catch (e) {
+      if (gen !== listFetchGen.current) return;
+      setError(e instanceof Error ? e.message : 'Failed to load candidates');
+      setCandidates([]);
+    } finally {
+      if (gen === listFetchGen.current && !silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    saveCandidates(candidates);
-  }, [candidates]);
+    void refreshCandidates();
+  }, [refreshCandidates]);
 
-  const addCandidate = useCallback(
-    (
-      data: Omit<Candidate, 'id' | 'appliedAt' | 'updatedAt' | 'selectionMailSent'> & { selectionMailSent?: boolean },
-    ): Candidate => {
-      const ts = now();
-      const row: Candidate = {
-        ...data,
-        selectionMailSent: data.selectionMailSent ?? false,
-        id: uuidv4(),
-        appliedAt: ts,
-        updatedAt: ts,
-      };
-      setCandidates((prev) => [row, ...prev]);
-      return row;
+  const submitCandidateFn = useCallback(
+    async (fd: FormData) => {
+      await submitCandidate(fd);
+      await refreshCandidates({ silent: true });
     },
-    [],
+    [refreshCandidates],
   );
 
-  const updateCandidate = useCallback((id: string, data: Partial<Omit<Candidate, 'id' | 'appliedAt'>>) => {
-    setCandidates((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...data, updatedAt: now() } : c)),
-    );
-  }, []);
-
-  const setCandidateStatus = useCallback((id: string, status: CandidateStatus) => {
-    setCandidates((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        const next = { ...c, status, updatedAt: now() };
-        if (status !== 'accepted') next.selectionMailSent = false;
-        return next;
-      }),
-    );
-  }, []);
+  const setCandidateStatus = useCallback(
+    async (id: string, status: CandidateStatus) => {
+      await patchCandidate(id, { status });
+      if (status !== 'accepted') {
+        setMailSentMap((prev) => {
+          if (!prev[id]) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+      await refreshCandidates({ silent: true });
+    },
+    [refreshCandidates],
+  );
 
   const setSelectionMailSent = useCallback((id: string, sent: boolean) => {
-    setCandidates((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, selectionMailSent: sent, updatedAt: now() } : c)),
-    );
+    setMailSentMap((prev) => {
+      const next = { ...prev };
+      if (sent) next[id] = true;
+      else delete next[id];
+      return next;
+    });
   }, []);
 
-  const removeCandidate = useCallback((id: string) => {
-    setCandidates((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  useEffect(() => {
+    saveMailSentMap(mailSentMap);
+  }, [mailSentMap]);
 
-  const value: CareerContextType = {
-    candidates,
-    addCandidate,
-    updateCandidate,
-    setCandidateStatus,
-    setSelectionMailSent,
-    removeCandidate,
-  };
+  const value: CareerContextType = useMemo(
+    () => ({
+      candidates,
+      loading,
+      error,
+      refreshCandidates,
+      submitCandidate: submitCandidateFn,
+      setCandidateStatus,
+      setSelectionMailSent,
+    }),
+    [candidates, loading, error, refreshCandidates, submitCandidateFn, setCandidateStatus, setSelectionMailSent],
+  );
 
   return <CareerContext.Provider value={value}>{children}</CareerContext.Provider>;
 }

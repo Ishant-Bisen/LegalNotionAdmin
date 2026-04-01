@@ -19,6 +19,7 @@ import {
   DialogContent,
   DialogActions,
   LinearProgress,
+  Tooltip,
   alpha,
 } from '@mui/material';
 import DraftsIcon from '@mui/icons-material/Drafts';
@@ -37,7 +38,7 @@ import TitleIcon from '@mui/icons-material/Title';
 import ShortTextIcon from '@mui/icons-material/ShortText';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { usePosts } from '../context/PostContext';
-import type { PostStatus } from '../types/Post';
+import type { Post, PostStatus } from '../types/Post';
 
 const QUILL_MODULES = {
   toolbar: [
@@ -252,10 +253,16 @@ function CompletionBar({
 export default function PostEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { addPost, updatePost, getPost, availableTags, addTag, removeTag } = usePosts();
+  const { posts, addPost, updatePost, fetchPostById, availableTags, addTag, removeTag } = usePosts();
 
-  const existingPost = id ? getPost(id) : undefined;
-  const isEditing = Boolean(existingPost);
+  const postInList = id ? posts.find((p) => p.id === id) : undefined;
+  const hasPostInList = Boolean(id && posts.some((p) => p.id === id));
+  const [singleFetched, setSingleFetched] = useState<Post | null>(null);
+  const [loadEditor, setLoadEditor] = useState(false);
+  const [loadEditorError, setLoadEditorError] = useState<string | null>(null);
+
+  const existingPost = postInList ?? singleFetched ?? undefined;
+  const isEditing = Boolean(id && existingPost);
 
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
@@ -270,17 +277,62 @@ export default function PostEditor() {
     message: '',
     severity: 'success',
   });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (existingPost) {
-      setTitle(existingPost.title);
-      setSummary(existingPost.summary ?? '');
-      setContent(existingPost.content);
-      setLabels(existingPost.labels);
-      setCoverImage(existingPost.coverImage);
-      setTimeToRead(existingPost.timeToRead);
+    if (!id) {
+      setSingleFetched(null);
+      setLoadEditorError(null);
     }
-  }, [existingPost]);
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (hasPostInList) {
+      setSingleFetched(null);
+      setLoadEditorError(null);
+      setLoadEditor(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadEditor(true);
+    setLoadEditorError(null);
+    (async () => {
+      const p = await fetchPostById(id);
+      if (cancelled) return;
+      if (p) {
+        setSingleFetched(p);
+      } else {
+        setSingleFetched(null);
+        setLoadEditorError('Could not load this blog. It may have been deleted or the link is invalid.');
+      }
+      setLoadEditor(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, hasPostInList, fetchPostById]);
+
+  useEffect(() => {
+    if (!id) {
+      setTitle('');
+      setSummary('');
+      setContent('');
+      setLabels([]);
+      setCoverImage('');
+      setTimeToRead(1);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!existingPost) return;
+    setTitle(existingPost.title);
+    setSummary(existingPost.summary ?? '');
+    setContent(existingPost.content);
+    setLabels(existingPost.labels);
+    setCoverImage(existingPost.coverImage);
+    setTimeToRead(existingPost.timeToRead);
+  }, [existingPost?.id, existingPost?.updatedAt]);
 
   const canSave = useMemo(() => title.trim().length > 0, [title]);
 
@@ -298,25 +350,37 @@ export default function PostEditor() {
     reader.readAsDataURL(file);
   }
 
-  function handleSave(status: PostStatus) {
-    if (!canSave) return;
+  async function handleSave(status: PostStatus) {
+    if (!canSave || saving) return;
     const postData = { title, summary, content, labels, coverImage, timeToRead, status };
 
-    if (isEditing && id) {
-      updatePost(id, postData);
+    setSaving(true);
+    try {
+      if (isEditing && id) {
+        await updatePost(id, postData);
+        setToast({
+          open: true,
+          message: `Post ${status === 'published' ? 'published' : 'saved as draft'} successfully!`,
+          severity: 'success',
+        });
+        setTimeout(() => navigate('/posts'), 1200);
+      } else {
+        await addPost(postData);
+        setToast({
+          open: true,
+          message: `Post ${status === 'published' ? 'published' : 'saved as draft'} successfully!`,
+          severity: 'success',
+        });
+        setTimeout(() => navigate('/posts'), 1200);
+      }
+    } catch (e) {
       setToast({
         open: true,
-        message: `Post ${status === 'published' ? 'published' : 'saved as draft'} successfully!`,
-        severity: 'success',
+        message: e instanceof Error ? e.message : 'Could not save post',
+        severity: 'error',
       });
-    } else {
-      addPost(postData);
-      setToast({
-        open: true,
-        message: `Post ${status === 'published' ? 'published' : 'saved as draft'} successfully!`,
-        severity: 'success',
-      });
-      setTimeout(() => navigate('/posts'), 1200);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -349,8 +413,30 @@ export default function PostEditor() {
     transition: 'color 0.3s',
   });
 
+  if (id && loadEditorError) {
+    return (
+      <Box sx={{ maxWidth: 1400, mx: 'auto', px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 4 } }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadEditorError}
+        </Alert>
+        <Button variant="contained" onClick={() => navigate('/posts')} sx={{ textTransform: 'none', fontWeight: 700 }}>
+          Back to all posts
+        </Button>
+      </Box>
+    );
+  }
+
+  if (id && loadEditor) {
+    return (
+      <Box sx={{ maxWidth: 1400, mx: 'auto', px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 4 } }}>
+        <LinearProgress sx={{ borderRadius: 1 }} />
+        <Typography sx={{ mt: 2, color: 'text.secondary' }}>Loading blog…</Typography>
+      </Box>
+    );
+  }
+
   return (
-    <Box className="max-w-[1400px] mx-auto">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', width: '100%' }}>
       {/* ───── Animated Hero Header ───── */}
       <Paper
         elevation={0}
@@ -540,12 +626,14 @@ export default function PostEditor() {
             flexDirection: 'column',
             gap: { xs: 3.5, lg: 5 },
             pl: { lg: 0.5 },
+            position: 'relative',
+            zIndex: 2,
           }}
         >
-          {/* Actions card */}
+          {/* Actions card — no opacity entrance animation: opacity:0 during fade can stack under the editor and steal no clicks / mis-hit targets */}
           <Paper
             elevation={0}
-            className="sidebar-card animate-fade-right delay-200"
+            className="sidebar-card"
             sx={{
               borderRadius: '16px',
               border: '1px solid #e2e8f0',
@@ -570,49 +658,61 @@ export default function PostEditor() {
               </Typography>
             </Box>
             <Box sx={{ p: 3.5, display: 'flex', flexDirection: 'column', gap: 1.75 }}>
+              <Tooltip title={!canSave ? 'Add a title first' : saving ? 'Saving…' : ''} placement="top" disableHoverListener={canSave && !saving}>
+                <span style={{ width: '100%' }}>
+                  <Button
+                    fullWidth
+                    type="button"
+                    variant="contained"
+                    startIcon={<PublishIcon />}
+                    onClick={() => void handleSave('published')}
+                    disabled={!canSave || saving}
+                    sx={{
+                      bgcolor: LN.green.main,
+                      textTransform: 'none',
+                      borderRadius: '10px',
+                      fontWeight: 600,
+                      py: 1.2,
+                      boxShadow: '0 4px 14px rgba(99,102,241,0.35)',
+                      transition: 'all 0.25s cubic-bezier(0.22,1,0.36,1)',
+                      '&:hover': { bgcolor: LN.green.dark, transform: 'translateY(-1px)', boxShadow: '0 6px 20px rgba(67, 160, 71, 0.45)' },
+                      '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' },
+                    }}
+                  >
+                    {saving ? 'Saving…' : 'Publish Post'}
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip title={!canSave ? 'Add a title first' : saving ? 'Saving…' : ''} placement="top" disableHoverListener={canSave && !saving}>
+                <span style={{ width: '100%' }}>
+                  <Button
+                    fullWidth
+                    type="button"
+                    variant="outlined"
+                    startIcon={<DraftsIcon />}
+                    onClick={() => void handleSave('draft')}
+                    disabled={!canSave || saving}
+                    sx={{
+                      borderColor: '#e2e8f0',
+                      color: '#64748b',
+                      textTransform: 'none',
+                      borderRadius: '10px',
+                      fontWeight: 600,
+                      py: 1.2,
+                      transition: 'all 0.25s cubic-bezier(0.22,1,0.36,1)',
+                      '&:hover': { borderColor: '#c7d2fe', bgcolor: '#f8fafc', transform: 'translateY(-1px)' },
+                      '&.Mui-disabled': { borderColor: '#f1f5f9', color: '#cbd5e1' },
+                    }}
+                  >
+                    {saving ? 'Saving…' : 'Save as Draft'}
+                  </Button>
+                </span>
+              </Tooltip>
               <Button
                 fullWidth
-                variant="contained"
-                startIcon={<PublishIcon />}
-                onClick={() => handleSave('published')}
-                disabled={!canSave}
-                sx={{
-                  bgcolor: LN.green.main,
-                  textTransform: 'none',
-                  borderRadius: '10px',
-                  fontWeight: 600,
-                  py: 1.2,
-                  boxShadow: '0 4px 14px rgba(99,102,241,0.35)',
-                  transition: 'all 0.25s cubic-bezier(0.22,1,0.36,1)',
-                  '&:hover': { bgcolor: LN.green.dark, transform: 'translateY(-1px)', boxShadow: '0 6px 20px rgba(67, 160, 71, 0.45)' },
-                  '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' },
-                }}
-              >
-                Publish Post
-              </Button>
-              <Button
-                fullWidth
-                variant="outlined"
-                startIcon={<DraftsIcon />}
-                onClick={() => handleSave('draft')}
-                disabled={!canSave}
-                sx={{
-                  borderColor: '#e2e8f0',
-                  color: '#64748b',
-                  textTransform: 'none',
-                  borderRadius: '10px',
-                  fontWeight: 600,
-                  py: 1.2,
-                  transition: 'all 0.25s cubic-bezier(0.22,1,0.36,1)',
-                  '&:hover': { borderColor: '#c7d2fe', bgcolor: '#f8fafc', transform: 'translateY(-1px)' },
-                  '&.Mui-disabled': { borderColor: '#f1f5f9', color: '#cbd5e1' },
-                }}
-              >
-                Save as Draft
-              </Button>
-              <Button
-                fullWidth
+                type="button"
                 variant="text"
+                disabled={saving}
                 onClick={() => navigate('/posts')}
                 sx={{
                   color: '#94a3b8',
@@ -630,7 +730,7 @@ export default function PostEditor() {
           {/* Cover image card */}
           <Paper
             elevation={0}
-            className="sidebar-card animate-fade-right delay-300"
+            className="sidebar-card"
             sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', bgcolor: '#fff' }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 3.5, py: 2.25, bgcolor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
@@ -731,7 +831,7 @@ export default function PostEditor() {
           {/* Labels / Tags card */}
           <Paper
             elevation={0}
-            className="sidebar-card animate-fade-right delay-400"
+            className="sidebar-card"
             sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', bgcolor: '#fff' }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 3.5, py: 2.25, bgcolor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
@@ -856,7 +956,7 @@ export default function PostEditor() {
           {/* Reading time card */}
           <Paper
             elevation={0}
-            className="sidebar-card animate-fade-right delay-500"
+                className="sidebar-card"
             sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', bgcolor: '#fff' }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 3.5, py: 2.25, bgcolor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>

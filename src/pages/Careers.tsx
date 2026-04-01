@@ -44,14 +44,12 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
-import PendingOutlinedIcon from '@mui/icons-material/PendingOutlined';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { useCareers } from '../context/CareerContext';
 import type { Candidate, CandidateStatus } from '../types/Candidate';
+import { getCandidateResumeUrl } from '../api/candidatesApi';
 import { gradients } from '../theme/branding';
-
-const PDF_MAX_BYTES = 1.5 * 1024 * 1024;
 
 type SortOrder = 'newest' | 'oldest';
 type StatusFilter = 'all' | CandidateStatus;
@@ -67,7 +65,7 @@ function TabPanel({ children, value, index }: { children: React.ReactNode; value
 function sortByDate(list: Candidate[], order: SortOrder): Candidate[] {
   const copy = [...list];
   const t = (d: string) => new Date(d).getTime();
-  copy.sort((a, b) => (order === 'newest' ? t(b.appliedAt) - t(a.appliedAt) : t(a.appliedAt) - t(b.appliedAt)));
+  copy.sort((a, b) => (order === 'newest' ? t(b.createdAt) - t(a.createdAt) : t(a.createdAt) - t(b.createdAt)));
   return copy;
 }
 
@@ -79,8 +77,6 @@ function statusChip(status: CandidateStatus) {
       return <Chip size="small" icon={<CancelOutlinedIcon />} label="Rejected" color="error" variant="outlined" />;
     case 'waiting':
       return <Chip size="small" icon={<HourglassEmptyIcon />} label="Waiting" color="warning" variant="outlined" />;
-    default:
-      return <Chip size="small" icon={<PendingOutlinedIcon />} label="Pending" color="default" variant="outlined" />;
   }
 }
 
@@ -97,18 +93,17 @@ const emptyForm = {
   email: '',
   college: '',
   passoutYear: new Date().getFullYear(),
-  currentLocation: '',
-  resumeFileName: null as string | null,
-  resumeDataUrl: null as string | null,
+  location: '',
 };
 
 export default function Careers() {
-  const { candidates, addCandidate, setCandidateStatus, setSelectionMailSent } = useCareers();
+  const { candidates, submitCandidate, setCandidateStatus, setSelectionMailSent } = useCareers();
   const [tab, setTab] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [snack, setSnack] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
 
   const filtered = useMemo(() => {
@@ -126,46 +121,59 @@ export default function Careers() {
 
   const handlePdf = useCallback((file: File | null) => {
     if (!file) {
-      setForm((f) => ({ ...f, resumeFileName: null, resumeDataUrl: null }));
+      setResumeFile(null);
       return;
     }
     if (file.type !== 'application/pdf') {
       setSnack({ message: 'Please upload a PDF file.', severity: 'error' });
+      setResumeFile(null);
       return;
     }
-    if (file.size > PDF_MAX_BYTES) {
-      setSnack({ message: 'PDF must be under 1.5 MB for local storage.', severity: 'error' });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setForm((f) => ({
-        ...f,
-        resumeFileName: file.name,
-        resumeDataUrl: reader.result as string,
-      }));
-    };
-    reader.readAsDataURL(file);
+    setResumeFile(file);
   }, []);
 
-  const submitAdd = () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setSnack({ message: 'Name and email are required.', severity: 'error' });
+  const submitAdd = async () => {
+    if (!form.name.trim() || !form.email.trim() || !form.college.trim() || !form.location.trim()) {
+      setSnack({ message: 'Name, email, college, and location are required.', severity: 'error' });
       return;
     }
-    addCandidate({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      college: form.college.trim(),
-      passoutYear: Number(form.passoutYear) || new Date().getFullYear(),
-      currentLocation: form.currentLocation.trim(),
-      resumeFileName: form.resumeFileName,
-      resumeDataUrl: form.resumeDataUrl,
-      status: 'pending',
-    });
-    setForm(emptyForm);
-    setAddOpen(false);
-    setSnack({ message: 'Applicant added.', severity: 'success' });
+    const passout = Number(form.passoutYear);
+    if (!Number.isFinite(passout)) {
+      setSnack({ message: 'Passout year is required and must be a number.', severity: 'error' });
+      return;
+    }
+    if (!resumeFile) {
+      setSnack({ message: 'Resume PDF is required.', severity: 'error' });
+      return;
+    }
+
+    try {
+      const fd = new FormData();
+      fd.append('name', form.name.trim());
+      fd.append('email', form.email.trim());
+      fd.append('college', form.college.trim());
+      fd.append('location', form.location.trim());
+      fd.append('passoutYear', String(passout));
+      fd.append('resume', resumeFile);
+
+      await submitCandidate(fd);
+      setForm(emptyForm);
+      setResumeFile(null);
+      setAddOpen(false);
+      setSnack({ message: 'Applicant submitted.', severity: 'success' });
+    } catch (e) {
+      setSnack({ message: e instanceof Error ? e.message : 'Could not submit application', severity: 'error' });
+    }
+  };
+
+  const handleSetStatus = async (id: string, status: CandidateStatus) => {
+    try {
+      await setCandidateStatus(id, status);
+      const label = status === 'accepted' ? 'Accepted' : status === 'waiting' ? 'Waiting' : 'Rejected';
+      setSnack({ message: `Candidate marked as ${label}.`, severity: 'success' });
+    } catch (e) {
+      setSnack({ message: e instanceof Error ? e.message : 'Could not update candidate status', severity: 'error' });
+    }
   };
 
   const exportExcel = () => {
@@ -179,8 +187,8 @@ export default function Careers() {
       Email: c.email,
       College: c.college,
       'Passout year': c.passoutYear,
-      'Current location': c.currentLocation,
-      'Applied at': c.appliedAt,
+      Location: c.location,
+      'Applied at': c.createdAt,
       'Selection email sent': c.selectionMailSent ? 'Yes' : 'No',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -200,7 +208,7 @@ export default function Careers() {
             overflow: 'hidden',
             border: '1px solid',
             borderColor: 'divider',
-            background: gradients.hero,
+            background: gradients.heroWelcome,
           }}
         >
           <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
@@ -264,7 +272,6 @@ export default function Careers() {
                       onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                     >
                       <MenuItem value="all">All</MenuItem>
-                      <MenuItem value="pending">Pending</MenuItem>
                       <MenuItem value="waiting">Waiting</MenuItem>
                       <MenuItem value="accepted">Accepted</MenuItem>
                       <MenuItem value="rejected">Rejected</MenuItem>
@@ -313,27 +320,35 @@ export default function Careers() {
                             <TableCell>{c.email}</TableCell>
                             <TableCell>{c.college || '—'}</TableCell>
                             <TableCell>{c.passoutYear}</TableCell>
-                            <TableCell>{c.currentLocation || '—'}</TableCell>
-                            <TableCell>{format(new Date(c.appliedAt), 'dd MMM yyyy')}</TableCell>
+                            <TableCell>{c.location || '—'}</TableCell>
+                            <TableCell>{format(new Date(c.createdAt), 'dd MMM yyyy')}</TableCell>
                             <TableCell>
-                              {c.resumeDataUrl && c.resumeFileName ? (
+                              {c.resumeOriginalName || c.resumeFileName ? (
                                 <Stack direction="row" spacing={0.5} alignItems="center">
-                                  <Chip size="small" icon={<PictureAsPdfIcon />} label={c.resumeFileName} variant="outlined" />
+                                  <Chip
+                                    size="small"
+                                    icon={<PictureAsPdfIcon />}
+                                    label={c.resumeOriginalName || c.resumeFileName || 'Resume'}
+                                    variant="outlined"
+                                  />
                                   <Tooltip title="Open PDF">
-                                    <IconButton size="small" href={c.resumeDataUrl} target="_blank" rel="noopener noreferrer" aria-label="Open resume">
+                                    <IconButton
+                                      size="small"
+                                      href={getCandidateResumeUrl(c.id)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      aria-label="Open resume"
+                                    >
                                       <OpenInNewIcon fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title="Download">
                                     <IconButton
                                       size="small"
-                                      onClick={() => {
-                                        const a = document.createElement('a');
-                                        a.href = c.resumeDataUrl!;
-                                        a.download = c.resumeFileName!;
-                                        a.click();
-                                      }}
                                       aria-label="Download resume"
+                                      href={getCandidateResumeUrl(c.id)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                     >
                                       <DownloadIcon fontSize="small" />
                                     </IconButton>
@@ -348,13 +363,13 @@ export default function Careers() {
                             <TableCell>{statusChip(c.status)}</TableCell>
                             <TableCell align="right">
                               <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-                                <Button size="small" color="success" onClick={() => setCandidateStatus(c.id, 'accepted')}>
+                                <Button size="small" color="success" onClick={() => void handleSetStatus(c.id, 'accepted')}>
                                   Accept
                                 </Button>
-                                <Button size="small" color="warning" onClick={() => setCandidateStatus(c.id, 'waiting')}>
+                                <Button size="small" color="warning" onClick={() => void handleSetStatus(c.id, 'waiting')}>
                                   Waiting
                                 </Button>
-                                <Button size="small" color="error" onClick={() => setCandidateStatus(c.id, 'rejected')}>
+                                <Button size="small" color="error" onClick={() => void handleSetStatus(c.id, 'rejected')}>
                                   Reject
                                 </Button>
                                 {c.status === 'accepted' && (
@@ -415,7 +430,7 @@ export default function Careers() {
                         <TableRow key={c.id} hover>
                           <TableCell sx={{ fontWeight: 600 }}>{c.name}</TableCell>
                           <TableCell>{c.email}</TableCell>
-                          <TableCell>{format(new Date(c.appliedAt), 'dd MMM yyyy, HH:mm')}</TableCell>
+                          <TableCell>{format(new Date(c.createdAt), 'dd MMM yyyy, HH:mm')}</TableCell>
                           <TableCell>
                             <FormControlLabel
                               control={
@@ -466,13 +481,13 @@ export default function Careers() {
               onChange={(e) => setForm((f) => ({ ...f, passoutYear: Number(e.target.value) }))}
             />
             <TextField
-              label="Current location"
+              label="Location"
               fullWidth
-              value={form.currentLocation}
-              onChange={(e) => setForm((f) => ({ ...f, currentLocation: e.target.value }))}
+              value={form.location}
+              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
             />
             <Button variant="outlined" component="label" startIcon={<PictureAsPdfIcon />}>
-              Attach resume (PDF, max 1.5 MB)
+              Attach resume (PDF)
               <input
                 type="file"
                 hidden
@@ -480,9 +495,9 @@ export default function Careers() {
                 onChange={(e) => handlePdf(e.target.files?.[0] ?? null)}
               />
             </Button>
-            {form.resumeFileName && (
+            {resumeFile && (
               <Typography variant="body2" color="text.secondary">
-                Selected: {form.resumeFileName}
+                Selected: {resumeFile.name}
               </Typography>
             )}
           </Stack>
@@ -496,7 +511,7 @@ export default function Careers() {
       </Dialog>
 
       <Snackbar open={!!snack} autoHideDuration={4000} onClose={() => setSnack(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        {snack ? <Alert severity={snack.severity} onClose={() => setSnack(null)}>{snack.message}</Alert> : null}
+        {snack ? <Alert severity={snack.severity} onClose={() => setSnack(null)}>{snack.message}</Alert> : undefined}
       </Snackbar>
     </Container>
   );

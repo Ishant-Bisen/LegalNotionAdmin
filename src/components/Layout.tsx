@@ -241,7 +241,8 @@ export default function Layout() {
                       }}
                       sx={{
                         borderRadius: 2,
-                        py: 1.35,
+                        py: { xs: 1.5, md: 1.35 },
+                        minHeight: { xs: 48, md: 'auto' },
                         px: 1.75,
                         position: 'relative',
                         overflow: 'hidden',
@@ -322,8 +323,7 @@ export default function Layout() {
           variant="text"
           startIcon={<LogoutIcon sx={{ fontSize: 20 }} />}
           onClick={() => {
-            logout();
-            navigate('/login', { replace: true });
+            void logout().finally(() => navigate('/login', { replace: true }));
           }}
           sx={{
             justifyContent: 'flex-start',
@@ -358,7 +358,15 @@ export default function Layout() {
           open={mobileOpen}
           onClose={() => setMobileOpen(false)}
           ModalProps={{ keepMounted: true }}
-          sx={{ '& .MuiDrawer-paper': drawerPaperSx }}
+          sx={{
+            '& .MuiDrawer-paper': {
+              ...drawerPaperSx,
+              width: 'min(100vw - 12px, 300px)',
+              maxWidth: '100vw',
+              pt: 'env(safe-area-inset-top, 0px)',
+              pb: 'env(safe-area-inset-bottom, 0px)',
+            },
+          }}
         >
           {drawerContent}
         </Drawer>
@@ -377,9 +385,23 @@ export default function Layout() {
 
       <Box className="flex-1 flex flex-col" sx={{ width: { md: `calc(100% - ${DRAWER_WIDTH}px)` } }}>
         {isMobile && (
-          <AppBar position="sticky" elevation={0} sx={{ bgcolor: '#fff', borderBottom: '1px solid #e2e8f0' }}>
-            <Toolbar>
-              <IconButton edge="start" onClick={() => setMobileOpen(true)} sx={{ color: '#334155' }}>
+          <AppBar
+            position="sticky"
+            elevation={0}
+            sx={{
+              bgcolor: '#fff',
+              borderBottom: '1px solid #e2e8f0',
+              pt: 'env(safe-area-inset-top, 0px)',
+            }}
+          >
+            <Toolbar variant="dense" sx={{ minHeight: { xs: 48 } }}>
+              <IconButton
+                edge="start"
+                size="large"
+                aria-label="Open menu"
+                onClick={() => setMobileOpen(true)}
+                sx={{ color: '#334155', ml: -0.5 }}
+              >
                 <MenuIcon />
               </IconButton>
               <Typography sx={{ color: '#1e293b', fontWeight: 600, fontSize: '1.125rem', ml: 1 }}>
@@ -390,9 +412,15 @@ export default function Layout() {
         )}
 
         <Box
-          className="flex-1 p-5 md:p-10 overflow-y-auto"
+          className="flex-1 overflow-y-auto"
           component="main"
           aria-label="Main content"
+          sx={{
+            flex: 1,
+            px: { xs: 2, sm: 3, md: 5 },
+            py: { xs: 2, sm: 3, md: 5 },
+            pb: { xs: 'max(16px, env(safe-area-inset-bottom))', md: 5 },
+          }}
         >
           <Box
             key={location.pathname}

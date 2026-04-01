@@ -47,9 +47,11 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import SortIcon from '@mui/icons-material/Sort';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { format } from 'date-fns';
 import { useReviews } from '../context/ReviewContext';
-import type { Review, ReviewStatus } from '../types/Review';
+import type { Review, ReviewState } from '../types/Review';
+import { getApiBaseForDisplay } from '../api/apiBase';
 import { gradients } from '../theme/branding';
 
 const REVIEWS_PAGE_SIZE = 10;
@@ -164,7 +166,7 @@ function ReviewCard({
   onDiscardedPermanentDelete,
 }: {
   review: Review;
-  variant: ReviewStatus;
+  variant: ReviewState;
   onApprove: (id: string) => void;
   onDiscard: (id: string) => void;
   onSaveReply: (id: string, reply: string) => void;
@@ -173,7 +175,7 @@ function ReviewCard({
   onDiscardedSendToNeedsAction?: (id: string) => void;
   onDiscardedPermanentDelete?: (id: string) => void;
 }) {
-  const isPending = variant === 'pending';
+  const isNeedsAction = variant === 'needs_action';
   const isApproved = variant === 'approved';
   const isDiscarded = variant === 'discarded';
 
@@ -192,7 +194,7 @@ function ReviewCard({
       sx={{
         borderRadius: 3,
         border: '1px solid',
-        borderColor: isPending ? alpha('#f59e0b', 0.35) : isApproved ? alpha('#059669', 0.2) : 'divider',
+        borderColor: isNeedsAction ? alpha('#f59e0b', 0.35) : isApproved ? alpha('#059669', 0.2) : 'divider',
         overflow: 'hidden',
         bgcolor: 'background.paper',
         transition: 'box-shadow 0.2s, border-color 0.2s',
@@ -208,8 +210,8 @@ function ReviewCard({
               width: 56,
               height: 56,
               fontWeight: 800,
-              bgcolor: isPending ? 'warning.light' : isApproved ? 'success.light' : 'grey.300',
-              color: isPending ? 'warning.dark' : isApproved ? 'success.dark' : 'grey.700',
+              bgcolor: isNeedsAction ? 'warning.light' : isApproved ? 'success.light' : 'grey.300',
+              color: isNeedsAction ? 'warning.dark' : isApproved ? 'success.dark' : 'grey.700',
             }}
           >
             {initials(review.name)}
@@ -277,7 +279,7 @@ function ReviewCard({
                   borderRadius: 2,
                   bgcolor: (t) => alpha(t.palette.grey[500], 0.06),
                   borderLeft: '4px solid',
-                  borderColor: isPending ? 'warning.main' : isApproved ? 'success.main' : 'grey.400',
+                  borderColor: isNeedsAction ? 'warning.main' : isApproved ? 'success.main' : 'grey.400',
                 }}
               >
                 <Typography variant="body1" sx={{ lineHeight: 1.7, color: 'text.primary' }}>
@@ -286,7 +288,7 @@ function ReviewCard({
               </Box>
             </Box>
 
-            {isPending && (review.adminReply ?? '').trim() ? (
+            {isNeedsAction && (review.adminReply ?? '').trim() ? (
               <Box
                 sx={{
                   p: 1.75,
@@ -308,7 +310,7 @@ function ReviewCard({
               </Box>
             ) : null}
 
-            {isPending && (
+            {isNeedsAction && (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ pt: 0.5 }}>
                 <Button
                   variant="contained"
@@ -501,8 +503,18 @@ function ReviewCard({
 }
 
 export default function Reviews() {
-  const { reviews, approveReview, discardReview, sendApprovedToNeedsAction, sendDiscardedToNeedsAction, permanentlyDeleteDiscarded, setReviewReply } =
-    useReviews();
+  const {
+    reviews,
+    loading,
+    error,
+    refreshReviews,
+    approveReview,
+    discardReview,
+    sendApprovedToNeedsAction,
+    sendDiscardedToNeedsAction,
+    permanentlyDeleteDiscarded,
+    setReviewReply,
+  } = useReviews();
   const [tab, setTab] = useState(0);
   const [reviewListPage, setReviewListPage] = useState(1);
   const [discardId, setDiscardId] = useState<string | null>(null);
@@ -511,17 +523,17 @@ export default function Reviews() {
   const [permanentDeleteDiscardedId, setPermanentDeleteDiscardedId] = useState<string | null>(null);
   const [deleteReplyId, setDeleteReplyId] = useState<string | null>(null);
   const [reviewSort, setReviewSort] = useState<ReviewListSort>('newest');
-  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'info' }>({
+  const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'info' | 'error' }>({
     open: false,
     message: '',
     severity: 'success',
   });
 
-  const pending = useMemo(() => reviews.filter((r) => r.status === 'pending'), [reviews]);
+  const needsAction = useMemo(() => reviews.filter((r) => r.status === 'needs_action'), [reviews]);
   const approved = useMemo(() => reviews.filter((r) => r.status === 'approved'), [reviews]);
   const discarded = useMemo(() => reviews.filter((r) => r.status === 'discarded'), [reviews]);
 
-  const sortedPending = useMemo(() => sortReviewsForList(pending, reviewSort), [pending, reviewSort]);
+  const sortedNeedsAction = useMemo(() => sortReviewsForList(needsAction, reviewSort), [needsAction, reviewSort]);
   const sortedApproved = useMemo(() => sortReviewsForList(approved, reviewSort), [approved, reviewSort]);
   const sortedDiscarded = useMemo(() => sortReviewsForList(discarded, reviewSort), [discarded, reviewSort]);
 
@@ -545,64 +557,87 @@ export default function Reviews() {
     return counts.map((c, i) => ({ stars: i + 1, count: c, pct: Math.round((c / max) * 100) }));
   }, [approved]);
 
-  function confirmDiscard() {
-    if (discardId) {
-      discardReview(discardId);
+  async function confirmDiscard() {
+    if (!discardId) return;
+    try {
+      await discardReview(discardId);
       setSnack({ open: true, message: 'Review discarded.', severity: 'info' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not discard review', severity: 'error' });
     }
     setDiscardId(null);
   }
 
-  function handleApprove(id: string) {
-    approveReview(id);
-    setSnack({ open: true, message: 'Review approved and ready to display.', severity: 'success' });
+  async function handleApprove(id: string) {
+    try {
+      await approveReview(id);
+      setSnack({ open: true, message: 'Review approved and ready to display.', severity: 'success' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not approve review', severity: 'error' });
+    }
   }
 
   function handleDiscardClick(id: string) {
     setDiscardId(id);
   }
 
-  function handleSaveReply(id: string, reply: string) {
-    setReviewReply(id, reply);
-    setSnack({ open: true, message: 'Reply saved.', severity: 'success' });
+  async function handleSaveReply(id: string, reply: string) {
+    try {
+      await setReviewReply(id, reply);
+      setSnack({ open: true, message: 'Reply saved.', severity: 'success' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not save reply', severity: 'error' });
+    }
   }
 
-  function confirmSendToNeedsAction() {
-    if (needsActionConfirmId) {
-      sendApprovedToNeedsAction(needsActionConfirmId);
+  async function confirmSendToNeedsAction() {
+    if (!needsActionConfirmId) return;
+    try {
+      await sendApprovedToNeedsAction(needsActionConfirmId);
       setTab(0);
       setSnack({ open: true, message: 'Review moved to Needs action.', severity: 'success' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not update review', severity: 'error' });
     }
     setNeedsActionConfirmId(null);
   }
 
-  function confirmDiscardedToNeedsAction() {
-    if (discardedToQueueId) {
-      sendDiscardedToNeedsAction(discardedToQueueId);
+  async function confirmDiscardedToNeedsAction() {
+    if (!discardedToQueueId) return;
+    try {
+      await sendDiscardedToNeedsAction(discardedToQueueId);
       setTab(0);
       setSnack({ open: true, message: 'Review moved to Needs action.', severity: 'success' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not update review', severity: 'error' });
     }
     setDiscardedToQueueId(null);
   }
 
-  function confirmPermanentDeleteDiscarded() {
-    if (permanentDeleteDiscardedId) {
-      permanentlyDeleteDiscarded(permanentDeleteDiscardedId);
+  async function confirmPermanentDeleteDiscarded() {
+    if (!permanentDeleteDiscardedId) return;
+    try {
+      await permanentlyDeleteDiscarded(permanentDeleteDiscardedId);
       setSnack({ open: true, message: 'Discarded review permanently removed.', severity: 'info' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not delete review', severity: 'error' });
     }
     setPermanentDeleteDiscardedId(null);
   }
 
-  function confirmDeleteReply() {
-    if (deleteReplyId) {
-      setReviewReply(deleteReplyId, '');
+  async function confirmDeleteReply() {
+    if (!deleteReplyId) return;
+    try {
+      await setReviewReply(deleteReplyId, '');
       setSnack({ open: true, message: 'Reply removed.', severity: 'info' });
+    } catch (e) {
+      setSnack({ open: true, message: e instanceof Error ? e.message : 'Could not remove reply', severity: 'error' });
     }
     setDeleteReplyId(null);
   }
 
-  const sections: { status: ReviewStatus; label: string; data: Review[]; index: number }[] = [
-    { status: 'pending', label: 'Needs action', data: sortedPending, index: 0 },
+  const sections: { status: ReviewState; label: string; data: Review[]; index: number }[] = [
+    { status: 'needs_action', label: 'Needs action', data: sortedNeedsAction, index: 0 },
     { status: 'approved', label: 'Approved', data: sortedApproved, index: 1 },
     { status: 'discarded', label: 'Discarded', data: sortedDiscarded, index: 2 },
   ];
@@ -612,14 +647,27 @@ export default function Reviews() {
   }, [tab, reviewSort]);
 
   useEffect(() => {
-    const data = tab === 0 ? sortedPending : tab === 1 ? sortedApproved : sortedDiscarded;
+    const data = tab === 0 ? sortedNeedsAction : tab === 1 ? sortedApproved : sortedDiscarded;
     const totalPages = Math.max(1, Math.ceil(data.length / REVIEWS_PAGE_SIZE));
     setReviewListPage((p) => Math.min(p, totalPages));
-  }, [tab, sortedPending, sortedApproved, sortedDiscarded]);
+  }, [tab, sortedNeedsAction, sortedApproved, sortedDiscarded]);
 
   return (
     <Container maxWidth="lg" disableGutters sx={{ px: { xs: 0, sm: 0 } }}>
       <Stack spacing={{ xs: 3, md: 4 }}>
+        {loading && <LinearProgress sx={{ borderRadius: 1 }} aria-label="Loading reviews" />}
+        {error && (
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" startIcon={<RefreshIcon />} onClick={() => void refreshReviews()}>
+                Retry
+              </Button>
+            }
+          >
+            {error}
+          </Alert>
+        )}
         <Fade in timeout={450}>
           <Card
             elevation={0}
@@ -651,8 +699,8 @@ export default function Reviews() {
                     </Typography>
                   </Stack>
                   <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.65, mt: 0.5, fontWeight: 500 }}>
-                    Approve reviews you are happy to showcase; discard spam or entries that should not go live. Connect your API later — keep this shape
-                    (name, rating, role, serviceUsed, review).
+                    API: <strong>{getApiBaseForDisplay()}</strong>. Approve, discard, and manage replies via{' '}
+                    <code style={{ fontSize: '0.9em' }}>/api/reviews</code>.
                   </Typography>
                 </Stack>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
@@ -676,7 +724,7 @@ export default function Reviews() {
         >
           <ReviewAnalyticsCard
             title="Pending"
-            value={pending.length}
+            value={needsAction.length}
             subtitle="Need approve or discard"
             icon={<PendingActionsIcon />}
             color="#d97706"
@@ -696,7 +744,7 @@ export default function Reviews() {
             subtitle={
               approved.length
                 ? `Approved only · ${approved.length} review${approved.length !== 1 ? 's' : ''}`
-                : 'No approved reviews yet (pending excluded)'
+                : 'No approved reviews yet (needs action excluded)'
             }
             icon={<RateReviewIcon />}
             color="#43A047"
@@ -720,7 +768,7 @@ export default function Reviews() {
                 Rating breakdown
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-                Approved reviews only (pending and discarded are excluded — same basis as average rating)
+                Approved reviews only (needs action and discarded are excluded — same basis as average rating)
               </Typography>
               <Stack spacing={1.75}>
                 {[...distribution].reverse().map(({ stars, count, pct }) => (
@@ -775,8 +823,8 @@ export default function Reviews() {
                 label={
                   <Stack direction="row" alignItems="center" gap={1}>
                     <span>Needs action</span>
-                    {pending.length > 0 && (
-                      <Chip label={pending.length} size="small" color="warning" sx={{ height: 22, fontWeight: 800 }} />
+                    {needsAction.length > 0 && (
+                      <Chip label={needsAction.length} size="small" color="warning" sx={{ height: 22, fontWeight: 800 }} />
                     )}
                   </Stack>
                 }
@@ -844,13 +892,13 @@ export default function Reviews() {
                     <Box sx={{ py: 10, textAlign: 'center' }}>
                       <RateReviewIcon sx={{ fontSize: 56, color: 'action.disabled', mb: 2 }} />
                       <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                        {status === 'pending' && 'All caught up'}
+                        {status === 'needs_action' && 'All caught up'}
                         {status === 'approved' && 'No approved reviews yet'}
                         {status === 'discarded' && 'No discarded items'}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {status === 'pending' && 'New submissions from your website will appear here.'}
-                        {status === 'approved' && 'Approve pending reviews to build your public wall of feedback.'}
+                        {status === 'needs_action' && 'New submissions from your website will appear here.'}
+                        {status === 'approved' && 'Approve reviews in Needs action to build your public wall of feedback.'}
                         {status === 'discarded' &&
                           'Send items back to Needs action to review again, or delete them permanently when you no longer need the record.'}
                       </Typography>

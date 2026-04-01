@@ -34,6 +34,13 @@ export const appTheme = createTheme({
   components: {
     MuiButton: {
       styleOverrides: {
+        root: ({ theme }) => ({
+          [theme.breakpoints.down('sm')]: {
+            minHeight: 44,
+            paddingLeft: theme.spacing(2),
+            paddingRight: theme.spacing(2),
+          },
+        }),
         containedPrimary: {
           background: gradients.ctaPrimary,
           boxShadow: `0 6px 20px rgba(67, 160, 71, 0.35)`,
@@ -50,6 +57,15 @@ export const appTheme = createTheme({
             boxShadow: `0 8px 26px rgba(239, 108, 0, 0.38)`,
           },
         },
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          [theme.breakpoints.down('md')]: {
+            padding: 10,
+          },
+        }),
       },
     },
   },

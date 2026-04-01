@@ -42,7 +42,7 @@ import { format } from 'date-fns';
 import { usePosts } from '../context/PostContext';
 import { useReviews } from '../context/ReviewContext';
 import { useAuth } from '../context/AuthContext';
-import type { ReviewStatus } from '../types/Review';
+import type { ReviewState } from '../types/Review';
 import { sortPostsByRecent } from '../utils/sortPosts';
 import { LN, gradients } from '../theme/branding';
 
@@ -101,8 +101,8 @@ function initials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function reviewStatusLabel(status: ReviewStatus) {
-  if (status === 'pending') return 'Needs action';
+function reviewStatusLabel(status: ReviewState) {
+  if (status === 'needs_action') return 'Needs action';
   if (status === 'approved') return 'Approved';
   return 'Discarded';
 }
@@ -121,7 +121,7 @@ export default function Dashboard() {
   const publishedRatio = total > 0 ? Math.round((published / total) * 100) : 0;
   const draftRatio = total > 0 ? Math.round((drafts / total) * 100) : 0;
 
-  const reviewsPending = reviews.filter((r) => r.status === 'pending').length;
+  const reviewsPending = reviews.filter((r) => r.status === 'needs_action').length;
   const approvedReviews = reviews.filter((r) => r.status === 'approved');
   const approvedReviewCount = approvedReviews.length;
   const avgApprovedRating =
@@ -315,8 +315,7 @@ export default function Dashboard() {
                   size="large"
                   startIcon={<LogoutIcon />}
                   onClick={() => {
-                    logout();
-                    navigate('/login', { replace: true });
+                    void logout().finally(() => navigate('/login', { replace: true }));
                   }}
                   sx={{
                     textTransform: 'none',
@@ -649,7 +648,9 @@ export default function Dashboard() {
                             }}
                           >
                             <Chip
-                              label={post.status === 'published' ? 'Live' : 'Draft'}
+                              label={
+                                post.status === 'published' ? 'Live' : post.status === 'draft' ? 'Draft' : 'Archived'
+                              }
                               size="small"
                               sx={{
                                 alignSelf: 'flex-end',
@@ -660,14 +661,39 @@ export default function Dashboard() {
                                 height: 28,
                                 maxWidth: '100%',
                                 border: '1px solid',
-                                borderColor: post.status === 'published' ? alpha('#059669', 0.35) : alpha('#d97706', 0.4),
-                                bgcolor: post.status === 'published' ? alpha('#059669', 0.1) : alpha('#d97706', 0.1),
-                                color: post.status === 'published' ? 'success.dark' : 'warning.dark',
-                                boxShadow: post.status === 'published' ? `0 1px 0 ${alpha('#059669', 0.12)}` : `0 1px 0 ${alpha('#d97706', 0.12)}`,
+                                borderColor:
+                                  post.status === 'published'
+                                    ? alpha('#059669', 0.35)
+                                    : post.status === 'draft'
+                                      ? alpha('#d97706', 0.4)
+                                      : alpha('#64748b', 0.4),
+                                bgcolor:
+                                  post.status === 'published'
+                                    ? alpha('#059669', 0.1)
+                                    : post.status === 'draft'
+                                      ? alpha('#d97706', 0.1)
+                                      : alpha('#64748b', 0.1),
+                                color:
+                                  post.status === 'published'
+                                    ? 'success.dark'
+                                    : post.status === 'draft'
+                                      ? 'warning.dark'
+                                      : 'text.secondary',
+                                boxShadow:
+                                  post.status === 'published'
+                                    ? `0 1px 0 ${alpha('#059669', 0.12)}`
+                                    : post.status === 'draft'
+                                      ? `0 1px 0 ${alpha('#d97706', 0.12)}`
+                                      : `0 1px 0 ${alpha('#64748b', 0.12)}`,
                                 transition: 'transform 0.2s ease, box-shadow 0.2s ease',
                                 '&:hover': {
                                   transform: 'scale(1.02)',
-                                  boxShadow: post.status === 'published' ? `0 2px 8px ${alpha('#059669', 0.2)}` : `0 2px 8px ${alpha('#d97706', 0.2)}`,
+                                  boxShadow:
+                                    post.status === 'published'
+                                      ? `0 2px 8px ${alpha('#059669', 0.2)}`
+                                      : post.status === 'draft'
+                                        ? `0 2px 8px ${alpha('#d97706', 0.2)}`
+                                        : `0 2px 8px ${alpha('#64748b', 0.2)}`,
                                 },
                                 '& .MuiChip-label': { px: 1.25, overflow: 'hidden', textOverflow: 'ellipsis' },
                               }}
@@ -872,13 +898,13 @@ export default function Dashboard() {
                                   fontWeight: 800,
                                   fontSize: '0.95rem',
                                   bgcolor:
-                                    rev.status === 'pending'
+                                    rev.status === 'needs_action'
                                       ? 'warning.light'
                                       : rev.status === 'approved'
                                         ? 'success.light'
                                         : 'grey.300',
                                   color:
-                                    rev.status === 'pending' ? 'warning.dark' : rev.status === 'approved' ? 'success.dark' : 'grey.700',
+                                    rev.status === 'needs_action' ? 'warning.dark' : rev.status === 'approved' ? 'success.dark' : 'grey.700',
                                 }}
                               >
                                 {initials(rev.name)}
@@ -904,13 +930,13 @@ export default function Dashboard() {
                                         fontWeight: 700,
                                         fontSize: 11,
                                         bgcolor:
-                                          rev.status === 'pending'
+                                          rev.status === 'needs_action'
                                             ? alpha('#d97706', 0.12)
                                             : rev.status === 'approved'
                                               ? alpha('#059669', 0.12)
                                               : alpha('#64748b', 0.12),
                                         color:
-                                          rev.status === 'pending' ? 'warning.dark' : rev.status === 'approved' ? 'success.dark' : 'text.secondary',
+                                          rev.status === 'needs_action' ? 'warning.dark' : rev.status === 'approved' ? 'success.dark' : 'text.secondary',
                                       }}
                                     />
                                     <Typography variant="caption" sx={{ color: 'text.disabled' }}>
