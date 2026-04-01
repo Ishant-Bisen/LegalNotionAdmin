@@ -18,6 +18,8 @@ build
 
 # Environment (keep secrets out of git)
 .env
+.env*
+!.env.example
 .env*.local
 
 # Test / coverage
