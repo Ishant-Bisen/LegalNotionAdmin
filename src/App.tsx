@@ -11,7 +11,9 @@ import PostEditor from './pages/PostEditor';
 import AllPosts from './pages/AllPosts';
 import Reviews from './pages/Reviews';
 import Careers from './pages/Careers';
+import Consultations from './pages/Consultations';
 import Login from './pages/Login';
+import GlobalApiLoader from './components/GlobalApiLoader';
 
 export default function App() {
   return (
@@ -19,6 +21,7 @@ export default function App() {
       <CssBaseline />
       <AuthProvider>
         <BrowserRouter>
+          <GlobalApiLoader />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute />}>
@@ -35,6 +38,7 @@ export default function App() {
                 <Route path="/posts" element={<AllPosts />} />
                 <Route path="/reviews" element={<Reviews />} />
                 <Route path="/careers" element={<Careers />} />
+                <Route path="/consultations" element={<Consultations />} />
               </Route>
             </Route>
           </Routes>

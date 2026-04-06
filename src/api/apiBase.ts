@@ -6,6 +6,23 @@ function normalizeBase(raw: string): string {
 
 export const DEFAULT_API_BASE = 'https://api.legalnotion.in';
 
+type ApiRequestListener = (pendingCount: number) => void;
+
+let pendingApiRequestCount = 0;
+const apiRequestListeners = new Set<ApiRequestListener>();
+
+function emitApiRequestCount(): void {
+  apiRequestListeners.forEach((listener) => listener(pendingApiRequestCount));
+}
+
+export function subscribeToApiRequestCount(listener: ApiRequestListener): () => void {
+  apiRequestListeners.add(listener);
+  listener(pendingApiRequestCount);
+  return () => {
+    apiRequestListeners.delete(listener);
+  };
+}
+
 /**
  * API origin (no trailing slash). Defaults to deployed Render API in all modes.
  */
@@ -33,11 +50,17 @@ export function apiFetch(input: string | URL, init?: RequestInit): Promise<Respo
     const token = getStoredAdminBearerToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
   }
+  pendingApiRequestCount += 1;
+  emitApiRequestCount();
+
   return fetch(input, {
     ...init,
     credentials: 'include',
     headers,
     cache: init?.cache ?? 'no-store',
+  }).finally(() => {
+    pendingApiRequestCount = Math.max(0, pendingApiRequestCount - 1);
+    emitApiRequestCount();
   });
 }
 

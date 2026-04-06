@@ -25,6 +25,7 @@ import EditNoteIcon from '@mui/icons-material/EditNote';
 import ArticleIcon from '@mui/icons-material/Article';
 import RateReviewIcon from '@mui/icons-material/RateReview';
 import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { LN, gradients, LOGO_PUBLIC_PATH } from '../theme/branding';
 import { useAuth } from '../context/AuthContext';
@@ -100,7 +101,10 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   },
   {
     title: 'People',
-    items: [{ label: 'Careers', path: '/careers', icon: <WorkOutlineIcon />, match: (p) => p.startsWith('/careers') }],
+    items: [
+      { label: 'Careers', path: '/careers', icon: <WorkOutlineIcon />, match: (p) => p.startsWith('/careers') },
+      { label: 'Consultations', path: '/consultations', icon: <SupportAgentIcon />, match: (p) => p.startsWith('/consultations') },
+    ],
   },
 ];
 
