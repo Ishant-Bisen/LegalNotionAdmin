@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -27,7 +27,6 @@ import { keyframes } from '@mui/material/styles';
 import ArticleIcon from '@mui/icons-material/Article';
 import DraftsIcon from '@mui/icons-material/Drafts';
 import PublishIcon from '@mui/icons-material/Publish';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AddIcon from '@mui/icons-material/Add';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -38,11 +37,15 @@ import RateReviewIcon from '@mui/icons-material/RateReview';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import StarOutlineIcon from '@mui/icons-material/StarOutline';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
 import { format } from 'date-fns';
 import { usePosts } from '../context/PostContext';
 import { useReviews } from '../context/ReviewContext';
+import { useCareers } from '../context/CareerContext';
 import { useAuth } from '../context/AuthContext';
 import type { ReviewState } from '../types/Review';
+import { fetchConsultationsList } from '../api/consultationsApi';
 import { sortPostsByRecent } from '../utils/sortPosts';
 import { LN, gradients } from '../theme/branding';
 
@@ -110,14 +113,16 @@ function reviewStatusLabel(status: ReviewState) {
 export default function Dashboard() {
   const { posts } = usePosts();
   const { reviews } = useReviews();
+  const { candidates } = useCareers();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const greetingName = user?.email?.split('@')[0]?.trim() || 'there';
+  const [consultationCount, setConsultationCount] = useState<number>(0);
 
   const published = posts.filter((p) => p.status === 'published').length;
   const drafts = posts.filter((p) => p.status === 'draft').length;
-  const totalReading = posts.reduce((acc, p) => acc + p.timeToRead, 0);
   const total = posts.length;
+  const pendingCandidates = candidates.filter((c) => c.status === 'waiting').length;
   const publishedRatio = total > 0 ? Math.round((published / total) * 100) : 0;
   const draftRatio = total > 0 ? Math.round((drafts / total) * 100) : 0;
 
@@ -132,6 +137,21 @@ export default function Dashboard() {
   const pendingSharePct =
     reviewTotal > 0 ? Math.round((reviewsPending / reviewTotal) * 100) : 0;
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchConsultationsList();
+        if (!cancelled) setConsultationCount(list.length);
+      } catch {
+        if (!cancelled) setConsultationCount(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const stats: {
     label: string;
     value: string | number;
@@ -144,15 +164,15 @@ export default function Dashboard() {
     chevronTitle: string;
   }[] = [
     {
-      label: 'Total Posts',
-      value: total,
-      sub: total === 1 ? 'article in library' : 'articles in library',
-      icon: <ArticleIcon sx={{ fontSize: 26 }} />,
+      label: 'Pending candidates',
+      value: pendingCandidates,
+      sub: pendingCandidates === 1 ? 'candidate awaiting review' : 'candidates awaiting review',
+      icon: <WorkOutlineIcon sx={{ fontSize: 26 }} />,
       color: LN.green.dark,
       bg: '#e8f5e9',
-      progress: total > 0 ? 100 : 0,
-      onClick: () => navigate('/posts'),
-      chevronTitle: 'Open all posts',
+      progress: pendingCandidates > 0 ? Math.min(100, pendingCandidates * 10) : 0,
+      onClick: () => navigate('/careers'),
+      chevronTitle: 'Open careers',
     },
     {
       label: 'Published',
@@ -177,15 +197,15 @@ export default function Dashboard() {
       chevronTitle: 'Open all posts',
     },
     {
-      label: 'Reading time',
-      value: `${totalReading}`,
-      sub: 'minutes total',
-      icon: <TrendingUpIcon sx={{ fontSize: 26 }} />,
+      label: 'Free consultations',
+      value: consultationCount,
+      sub: consultationCount === 1 ? 'request pending' : 'requests pending',
+      icon: <SupportAgentIcon sx={{ fontSize: 26 }} />,
       color: LN.orange.dark,
       bg: '#fff3e0',
-      progress: totalReading > 0 ? Math.min(100, Math.round((totalReading / Math.max(total * 8, 1)) * 100)) : 0,
-      onClick: () => navigate('/posts'),
-      chevronTitle: 'Open all posts',
+      progress: consultationCount > 0 ? Math.min(100, consultationCount * 10) : 0,
+      onClick: () => navigate('/consultations'),
+      chevronTitle: 'Open consultations',
     },
     {
       label: 'Reviews — needs action',
