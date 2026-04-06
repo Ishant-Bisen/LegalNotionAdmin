@@ -517,7 +517,7 @@ export default function PostEditor() {
             sx={{
               borderRadius: '16px',
               border: '1px solid #e2e8f0',
-              overflow: 'hidden',
+              overflow: 'visible',
               transition: 'border-color 0.3s, box-shadow 0.3s',
               '&:focus-within': {
                 borderColor: '#c7d2fe',

@@ -25,6 +25,8 @@ body {
   border-radius: 8px 8px 0 0;
   border-color: #e0e0e0;
   background: #fafafa;
+  position: relative;
+  z-index: 10;
 }
 
 .ql-editor {
@@ -49,6 +51,10 @@ body {
 .ql-container.ql-snow {
   border-radius: 0 0 8px 8px;
   border-color: #e0e0e0;
+}
+
+.ql-toolbar .ql-picker.ql-expanded .ql-picker-options {
+  z-index: 30;
 }
 
 /* ─── Post content ─── */
