@@ -40,6 +40,7 @@ export default function Consultations() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [activeConsultation, setActiveConsultation] = useState<Consultation | null>(null);
   const [snack, setSnack] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
 
   const load = useCallback(async () => {
@@ -175,7 +176,15 @@ export default function Consultations() {
                   ) : (
                     filtered.map((r) => (
                       <TableRow key={r.id} hover>
-                        <TableCell sx={{ fontWeight: 600 }}>{r.name}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>
+                          <Button
+                            variant="text"
+                            onClick={() => setActiveConsultation(r)}
+                            sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 700 }}
+                          >
+                            {r.name}
+                          </Button>
+                        </TableCell>
                         <TableCell>{r.email}</TableCell>
                         <TableCell>{r.phone || '—'}</TableCell>
                         <TableCell sx={{ maxWidth: 420 }}>
@@ -186,8 +195,10 @@ export default function Consultations() {
                               WebkitLineClamp: 2,
                               WebkitBoxOrient: 'vertical',
                               overflow: 'hidden',
+                              cursor: 'pointer',
                             }}
                             title={r.message}
+                            onClick={() => setActiveConsultation(r)}
                           >
                             {r.message}
                           </Typography>
@@ -225,6 +236,36 @@ export default function Consultations() {
           <Button onClick={() => setDeleteId(null)}>Cancel</Button>
           <Button color="error" variant="contained" onClick={() => void handleDelete()}>
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(activeConsultation)} onClose={() => setActiveConsultation(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Consultation message</DialogTitle>
+        <DialogContent dividers>
+          {activeConsultation ? (
+            <Stack spacing={1.25}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Name:</strong> {activeConsultation.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Email:</strong> {activeConsultation.email}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Phone:</strong> {activeConsultation.phone || '—'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Submitted:</strong> {format(new Date(activeConsultation.createdAt), 'dd MMM yyyy, HH:mm')}
+              </Typography>
+              <Box sx={{ mt: 1, p: 1.5, borderRadius: 1.5, bgcolor: 'grey.50', border: '1px solid', borderColor: 'divider' }}>
+                <Typography sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{activeConsultation.message}</Typography>
+              </Box>
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setActiveConsultation(null)} variant="contained">
+            Close
           </Button>
         </DialogActions>
       </Dialog>
