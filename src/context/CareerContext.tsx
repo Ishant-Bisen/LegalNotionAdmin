@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import type { Candidate, CandidateStatus } from '../types/Candidate';
 import type { ApiCandidateDocument } from '../types/Candidate';
 import { mapApiCandidateToCandidate } from '../types/Candidate';
-import { fetchCandidatesList, patchCandidate, submitCandidate } from '../api/candidatesApi';
+import { deleteCandidate, fetchCandidatesList, patchCandidate, submitCandidate } from '../api/candidatesApi';
 
 interface CareerContextType {
   candidates: Candidate[];
@@ -11,6 +11,7 @@ interface CareerContextType {
   refreshCandidates: (opts?: { silent?: boolean }) => Promise<void>;
   submitCandidate: (fd: FormData) => Promise<void>;
   setCandidateStatus: (id: string, status: CandidateStatus) => Promise<void>;
+  removeCandidate: (id: string) => Promise<void>;
   setSelectionMailSent: (id: string, sent: boolean) => void;
 }
 
@@ -115,6 +116,20 @@ export function CareerProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const removeCandidate = useCallback(
+    async (id: string) => {
+      await deleteCandidate(id);
+      setMailSentMap((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await refreshCandidates({ silent: true });
+    },
+    [refreshCandidates],
+  );
+
   useEffect(() => {
     saveMailSentMap(mailSentMap);
   }, [mailSentMap]);
@@ -127,9 +142,10 @@ export function CareerProvider({ children }: { children: ReactNode }) {
       refreshCandidates,
       submitCandidate: submitCandidateFn,
       setCandidateStatus,
+      removeCandidate,
       setSelectionMailSent,
     }),
-    [candidates, loading, error, refreshCandidates, submitCandidateFn, setCandidateStatus, setSelectionMailSent],
+    [candidates, loading, error, refreshCandidates, submitCandidateFn, setCandidateStatus, removeCandidate, setSelectionMailSent],
   );
 
   return <CareerContext.Provider value={value}>{children}</CareerContext.Provider>;

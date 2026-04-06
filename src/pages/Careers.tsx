@@ -44,6 +44,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { useCareers } from '../context/CareerContext';
@@ -97,11 +98,12 @@ const emptyForm = {
 };
 
 export default function Careers() {
-  const { candidates, submitCandidate, setCandidateStatus, setSelectionMailSent } = useCareers();
+  const { candidates, submitCandidate, setCandidateStatus, removeCandidate, setSelectionMailSent } = useCareers();
   const [tab, setTab] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [snack, setSnack] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
@@ -118,6 +120,7 @@ export default function Careers() {
   );
 
   const acceptedCount = useMemo(() => candidates.filter((c) => c.status === 'accepted').length, [candidates]);
+  const deletingCandidate = deleteId ? candidates.find((c) => c.id === deleteId) ?? null : null;
 
   const handlePdf = useCallback((file: File | null) => {
     if (!file) {
@@ -196,6 +199,18 @@ export default function Careers() {
     XLSX.utils.book_append_sheet(wb, ws, 'Selected');
     XLSX.writeFile(wb, `legal-notion-selected-${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
     setSnack({ message: `Exported ${accepted.length} candidate(s).`, severity: 'success' });
+  };
+
+  const handleDeleteCandidate = async () => {
+    if (!deleteId) return;
+    try {
+      await removeCandidate(deleteId);
+      setSnack({ message: 'Candidate deleted.', severity: 'success' });
+    } catch (e) {
+      setSnack({ message: e instanceof Error ? e.message : 'Could not delete candidate', severity: 'error' });
+    } finally {
+      setDeleteId(null);
+    }
   };
 
   return (
@@ -372,6 +387,11 @@ export default function Careers() {
                                 <Button size="small" color="error" onClick={() => void handleSetStatus(c.id, 'rejected')}>
                                   Reject
                                 </Button>
+                                <Tooltip title="Delete candidate">
+                                  <IconButton size="small" color="error" onClick={() => setDeleteId(c.id)} aria-label={`Delete ${c.name}`}>
+                                    <DeleteOutlineIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
                                 {c.status === 'accepted' && (
                                   <>
                                     <Tooltip title="Opens your email client">
@@ -506,6 +526,23 @@ export default function Careers() {
           <Button onClick={() => setAddOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={submitAdd}>
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteId)} onClose={() => setDeleteId(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Delete candidate?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {deletingCandidate
+              ? `This will permanently delete ${deletingCandidate.name} (${deletingCandidate.email}).`
+              : 'This will permanently delete this candidate.'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteId(null)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={() => void handleDeleteCandidate()}>
+            Delete
           </Button>
         </DialogActions>
       </Dialog>
