@@ -35,7 +35,6 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import RateReviewIcon from '@mui/icons-material/RateReview';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
-import StarOutlineIcon from '@mui/icons-material/StarOutline';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
@@ -127,12 +126,6 @@ export default function Dashboard() {
   const draftRatio = total > 0 ? Math.round((drafts / total) * 100) : 0;
 
   const reviewsPending = reviews.filter((r) => r.status === 'needs_action').length;
-  const approvedReviews = reviews.filter((r) => r.status === 'approved');
-  const approvedReviewCount = approvedReviews.length;
-  const avgApprovedRating =
-    approvedReviewCount > 0
-      ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviewCount
-      : 0;
   const reviewTotal = reviews.length;
   const pendingSharePct =
     reviewTotal > 0 ? Math.round((reviewsPending / reviewTotal) * 100) : 0;
@@ -164,39 +157,6 @@ export default function Dashboard() {
     chevronTitle: string;
   }[] = [
     {
-      label: 'Pending candidates',
-      value: pendingCandidates,
-      sub: pendingCandidates === 1 ? 'candidate awaiting review' : 'candidates awaiting review',
-      icon: <WorkOutlineIcon sx={{ fontSize: 26 }} />,
-      color: LN.green.dark,
-      bg: '#e8f5e9',
-      progress: pendingCandidates > 0 ? Math.min(100, pendingCandidates * 10) : 0,
-      onClick: () => navigate('/careers'),
-      chevronTitle: 'Open careers',
-    },
-    {
-      label: 'Published',
-      value: published,
-      sub: total ? `${publishedRatio}% of all posts` : 'nothing live yet',
-      icon: <PublishIcon sx={{ fontSize: 26 }} />,
-      color: '#059669',
-      bg: '#d1fae5',
-      progress: publishedRatio,
-      onClick: () => navigate('/posts'),
-      chevronTitle: 'Open all posts',
-    },
-    {
-      label: 'Drafts',
-      value: drafts,
-      sub: total ? `${draftRatio}% in progress` : 'start writing',
-      icon: <DraftsIcon sx={{ fontSize: 26 }} />,
-      color: '#d97706',
-      bg: '#fef3c7',
-      progress: draftRatio,
-      onClick: () => navigate('/posts'),
-      chevronTitle: 'Open all posts',
-    },
-    {
       label: 'Free consultations',
       value: consultationCount,
       sub: consultationCount === 1 ? 'request pending' : 'requests pending',
@@ -224,17 +184,37 @@ export default function Dashboard() {
       chevronTitle: 'Open reviews',
     },
     {
-      label: 'Approved rating',
-      value: approvedReviewCount ? avgApprovedRating.toFixed(1) : '—',
-      sub: approvedReviewCount
-        ? `Average of ${approvedReviewCount} approved`
-        : 'Approve reviews to see your score',
-      icon: <StarOutlineIcon sx={{ fontSize: 26 }} />,
+      label: 'Pending candidates',
+      value: pendingCandidates,
+      sub: pendingCandidates === 1 ? 'candidate awaiting review' : 'candidates awaiting review',
+      icon: <WorkOutlineIcon sx={{ fontSize: 26 }} />,
+      color: LN.green.dark,
+      bg: '#e8f5e9',
+      progress: pendingCandidates > 0 ? Math.min(100, pendingCandidates * 10) : 0,
+      onClick: () => navigate('/careers'),
+      chevronTitle: 'Open careers',
+    },
+    {
+      label: 'Drafts',
+      value: drafts,
+      sub: total ? `${draftRatio}% in progress` : 'start writing',
+      icon: <DraftsIcon sx={{ fontSize: 26 }} />,
+      color: '#d97706',
+      bg: '#fef3c7',
+      progress: draftRatio,
+      onClick: () => navigate('/posts'),
+      chevronTitle: 'Open all posts',
+    },
+    {
+      label: 'Published',
+      value: published,
+      sub: total ? `${publishedRatio}% of all posts` : 'nothing live yet',
+      icon: <PublishIcon sx={{ fontSize: 26 }} />,
       color: '#059669',
       bg: '#d1fae5',
-      progress: approvedReviewCount ? Math.round((avgApprovedRating / 5) * 100) : 0,
-      onClick: () => navigate('/reviews'),
-      chevronTitle: 'Open reviews',
+      progress: publishedRatio,
+      onClick: () => navigate('/posts'),
+      chevronTitle: 'Open all posts',
     },
   ];
 
